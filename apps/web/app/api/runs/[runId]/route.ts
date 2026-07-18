@@ -10,14 +10,16 @@ export async function GET(request: Request, context: { params: Promise<{ runId: 
     const run = await repo.getRun(runId);
     if (!run) return Response.json({ error: "not_found" }, { status: 404 });
     const events = visibleEvents(await repo.listEvents(runId), run.status);
+    const terminal = ["completed", "failed", "cancelled"].includes(run.status);
+    const replays = terminal ? await repo.listReplays(runId) : [];
     const token = participantToken(request);
     const participants = await repo.listParticipants(runId);
     const viewer = token ? await repo.getParticipant(runId, tokenHash(token)) : null;
     const pendingTurn = token ? await repo.pendingTurnFor(runId, tokenHash(token)) : null;
-    return Response.json({ run, events, viewer,
+    return Response.json({ run, events, replays, viewer,
       room: participants.length ? { participants, ready: participants.length > 0 && participants.every((p) => p.ready) } : null,
       pendingTurn,
-      visibility: ["completed", "failed", "cancelled"].includes(run.status) ? "terminal" : "live" });
+      visibility: terminal ? "terminal" : "live" });
   } catch (error) { return apiError(error); }
 }
 

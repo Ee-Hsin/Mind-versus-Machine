@@ -6,6 +6,7 @@ export const wordleDefinition: GameDefinition<"wordle"> = {
   gameType: "wordle",
   async runMatch(context) {
     const metrics = [];
+    const games = [];
     const seeded = new WordleModel();
     const { answer } = seeded.serialize();
     for (const [actorId, player] of Object.entries(context.players)) {
@@ -32,11 +33,12 @@ export const wordleDefinition: GameDefinition<"wordle"> = {
         latencyMs: run.turns.reduce((sum, turn) => sum + turn.latencyMs, 0),
         inputTokens: run.inputTokens, outputTokens: run.outputTokens,
       });
+      games.push({ gameId: actorId, result: run.result, finalState: run.finalState });
     }
     await context.events.publish({
       sequence: 0, runId: context.runId, gameType: "wordle", type: "match_completed",
       timestamp: new Date().toISOString(), audience: { kind: "postgame" },
-      matchId: String(context.matchNumber), payload: { metrics },
+      matchId: String(context.matchNumber), payload: { metrics, games },
     });
     return { metrics };
   },

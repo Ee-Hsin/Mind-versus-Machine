@@ -11,6 +11,9 @@ export interface HumanTurnRow {
   status: "pending" | "submitted" | "consumed" | "cancelled"; action: unknown;
 }
 export interface RatingRow { model: string; gameType: string; elo: number; gamesPlayed: number }
+export interface ReplayRow {
+  runId: string; matchId: string; gameType: string; replay: unknown; completedAt: string;
+}
 
 export class SupabaseArenaRepository implements ArenaRepository {
   constructor(private readonly client: SupabaseClient) {}
@@ -110,6 +113,16 @@ export class SupabaseArenaRepository implements ArenaRepository {
       game_id: event.gameId, payload: event.payload, created_at: event.timestamp,
     });
     if (error) throw error;
+    if (event.type === "match_completed" && event.matchId) {
+      const { error: replayError } = await this.client.from("arena_game_replays").upsert({
+        run_id: event.runId,
+        match_id: event.matchId,
+        game_type: event.gameType,
+        replay: event.payload,
+        completed_at: event.timestamp,
+      }, { onConflict: "run_id,match_id" });
+      if (replayError) throw replayError;
+    }
   }
 
   async listEvents(runId: string, after = 0, limit = 500): Promise<ArenaEvent[]> {
@@ -117,6 +130,19 @@ export class SupabaseArenaRepository implements ArenaRepository {
       .eq("run_id", runId).gt("sequence", after).order("sequence").limit(limit);
     if (error) throw error;
     return (data ?? []).map((row) => mapEvent(row as Record<string, unknown>));
+  }
+
+  async listReplays(runId: string): Promise<ReplayRow[]> {
+    const { data, error } = await this.client.from("arena_game_replays").select()
+      .eq("run_id", runId).order("match_id");
+    if (error) throw error;
+    return (data ?? []).map((row) => ({
+      runId: row.run_id,
+      matchId: row.match_id,
+      gameType: row.game_type,
+      replay: row.replay,
+      completedAt: row.completed_at,
+    }));
   }
 
   async loadRating(model: string, gameType: string): Promise<RatingRow | null> {

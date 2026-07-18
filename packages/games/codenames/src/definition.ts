@@ -38,7 +38,10 @@ export const codenamesDefinition: GameDefinition<"codenames"> = {
     await context.events.publish({
       sequence: 0, runId: context.runId, gameType: "codenames", type: "match_completed",
       timestamp: new Date().toISOString(), audience: { kind: "postgame" },
-      matchId: String(context.matchNumber), payload: { metrics },
+      matchId: String(context.matchNumber), payload: {
+        metrics,
+        games: [{ gameId: `codenames-${context.matchNumber}`, result: run.result, finalState: run.finalState }],
+      },
     });
     return { metrics };
   },
