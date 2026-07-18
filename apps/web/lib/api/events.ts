@@ -7,10 +7,20 @@ export function eventVisibility(events: ArenaEvent[], status: RunStatus): EventV
   return hasFinishedHumanWordle(events) ? "revealed" : "live";
 }
 
-export function visibleEvents(events: ArenaEvent[], status: RunStatus): ArenaEvent[] {
+/**
+ * The events a given viewer may see. Public events are always visible. Seat
+ * events are the per-seat security boundary (e.g. a Codenames spymaster's key)
+ * and are returned only to the authenticated seat that owns them. Postgame
+ * events unseal once the game-specific reveal condition is met.
+ */
+export function visibleEvents(events: ArenaEvent[], status: RunStatus, viewerSeatId?: string | null): ArenaEvent[] {
   const revealPostgame = status === "completed" || hasFinishedHumanWordle(events);
-  return events.filter((event) =>
-    event.audience.kind === "public" || (revealPostgame && event.audience.kind === "postgame"));
+  return events.filter((event) => {
+    if (event.audience.kind === "public") return true;
+    if (event.audience.kind === "seat") return Boolean(viewerSeatId) && event.audience.seatId === viewerSeatId;
+    if (event.audience.kind === "postgame") return revealPostgame;
+    return false; // operator events never reach the public API
+  });
 }
 
 function hasFinishedHumanWordle(events: ArenaEvent[]): boolean {

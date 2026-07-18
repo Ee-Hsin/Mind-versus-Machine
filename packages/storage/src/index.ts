@@ -37,6 +37,12 @@ export class SupabaseArenaRepository implements ArenaRepository {
     return data ? mapRun(data as Record<string, unknown>) : null;
   }
 
+  async roomCodeFor(runId: string): Promise<string | null> {
+    const { data, error } = await this.client.from("arena_runs").select("room_code").eq("id", runId).maybeSingle();
+    if (error) throw error;
+    return (data?.room_code as string | null) ?? null;
+  }
+
   async createParticipant(input: { runId: string; tokenHash: string; displayName: string; seatId: string; isHost: boolean }) {
     const { data, error } = await this.client.from("arena_participants").insert({
       run_id: input.runId, token_hash: input.tokenHash, display_name: input.displayName,

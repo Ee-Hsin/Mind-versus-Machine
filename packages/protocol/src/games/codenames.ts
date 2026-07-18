@@ -29,11 +29,39 @@ export type CodenamesConfig = z.infer<typeof codenamesConfigSchema>;
 export type CodenamesAction = z.infer<typeof codenamesActionSchema>;
 export type CodenamesDecision = z.infer<typeof codenamesDecisionSchema>;
 export type CodenamesCardColor = CodenamesTeam | "neutral" | "assassin";
+export type CodenamesGuessOutcome = "correct" | "wrong-team" | "neutral" | "assassin";
+export type CodenamesTurnEnd =
+  | "limit"
+  | "neutral"
+  | "wrong-team"
+  | "assassin"
+  | "stopped"
+  | "win"
+  | null;
 
 export interface CodenamesCardView {
   word: string;
   revealed: boolean;
   color: CodenamesCardColor | null;
+}
+
+export interface CodenamesClue {
+  word: string;
+  number: number;
+}
+
+export interface CodenamesGuessRecord {
+  word: string;
+  color: CodenamesCardColor;
+  outcome: CodenamesGuessOutcome;
+}
+
+/** One team's turn: its clue, the (revealed) guesses made under it, and how it ended. */
+export interface CodenamesTurnRecord {
+  team: CodenamesTeam;
+  clue: CodenamesClue;
+  guesses: CodenamesGuessRecord[];
+  endedBy: CodenamesTurnEnd;
 }
 
 export interface CodenamesPublicState {
@@ -42,8 +70,12 @@ export interface CodenamesPublicState {
   phase: "clue" | "guess";
   activeSeat: CodenamesSeat;
   remaining: Record<CodenamesTeam, number>;
+  currentClue: CodenamesClue | null;
+  guessesRemaining: number;
+  log: CodenamesTurnRecord[];
   isGameOver: boolean;
   winner: CodenamesTeam | null;
+  endReason: "all-cards" | "assassin" | null;
   keyVisible: boolean;
 }
 

@@ -21,7 +21,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
-import { cn } from "@/lib/utils";
+import { cn, randomId } from "@/lib/utils";
 
 const HUMAN_ID = "human-wordle";
 const MAX_TRIES = 6;
@@ -135,7 +135,7 @@ export function WordleArena({ runId }: Readonly<{ runId: string }>) {
         body: JSON.stringify({
           turnId: pendingTurn.turnId,
           action: { guess },
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey: randomId(),
         }),
       });
       if (!response.ok) throw new Error("That turn could not be submitted.");

@@ -42,16 +42,40 @@ export class CodenamesModel {
       board: state.board.map((card) => ({
         word: card.word,
         revealed: card.revealed,
+        // Spymasters always know colours; operatives only see a colour once the
+        // card is revealed (the pure model already masks unrevealed colours to null).
         color: "color" in card ? card.color : null,
       })),
       currentTeam: state.currentTeam,
       phase: state.phase,
       activeSeat: `${state.currentTeam}-${activeRole}` as CodenamesSeat,
       remaining: state.remaining,
+      // currentClue / guesses / log only ever expose already-revealed cards, so
+      // they are safe to project to any audience.
+      currentClue: state.currentClue,
+      guessesRemaining: state.guessesRemaining,
+      log: state.log.map((turn) => ({
+        team: turn.team,
+        clue: { word: turn.clue.word, number: turn.clue.number },
+        guesses: turn.guesses.map((guess) => ({
+          word: guess.word,
+          color: guess.color,
+          outcome: guess.outcome,
+        })),
+        endedBy: turn.endedBy,
+      })),
       isGameOver: state.isGameOver,
       winner: state.winner,
+      endReason: state.endReason,
       keyVisible: visibleRole === "spymaster",
     };
+  }
+
+  /** The full colour key, aligned to the board words. SERVER-SIDE ONLY — deliver
+   *  it only to a spymaster seat. */
+  fullBoard(): { words: string[]; colors: CodenamesCardColor[] } {
+    const { words, key } = this.game.getState();
+    return { words, colors: key };
   }
 
   get activeSeat(): CodenamesSeat {

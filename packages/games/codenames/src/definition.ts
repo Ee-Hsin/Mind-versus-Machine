@@ -1,27 +1,53 @@
 import { runAdapter, type GameDefinition } from "@ai-ramp/engine";
+import type { ArenaEventAudience } from "@ai-ramp/protocol";
 import { CodenamesAdapter } from "./adapter";
 import { CodenamesModel } from "./model";
+
+const RED_SPYMASTER_SEAT = "red-spymaster";
 
 export const codenamesDefinition: GameDefinition<"codenames"> = {
   gameType: "codenames",
   async runMatch(context) {
-    const adapter = new CodenamesAdapter(new CodenamesModel());
+    const model = new CodenamesModel();
+    const adapter = new CodenamesAdapter(model);
+    const matchId = String(context.matchNumber);
+    const publish = (type: string, audience: ArenaEventAudience, payload: unknown) =>
+      context.events.publish({
+        sequence: 0,
+        runId: context.runId,
+        gameType: "codenames",
+        type,
+        timestamp: new Date().toISOString(),
+        audience,
+        matchId,
+        payload,
+      });
+
+    // Deal the board before anyone acts: a public snapshot (masked colours) so
+    // both humans can see the words immediately, and a seat-scoped key that only
+    // the human red spymaster's snapshot will ever return.
+    await publish("state", { kind: "public" }, { state: adapter.publicStateFor("spectator") });
+    const { words, colors } = model.fullBoard();
+    await publish("key", { kind: "seat", seatId: RED_SPYMASTER_SEAT }, { words, colors });
+
     const run = await runAdapter(adapter, context.players, {
       signal: context.signal,
       observer: {
         async onTurn(turn) {
-          await context.events.publish({
-            sequence: 0, runId: context.runId, gameType: "codenames", type: "turn",
-            timestamp: new Date().toISOString(), audience: { kind: "public" },
-            matchId: String(context.matchNumber), payload: {
-              playerId: turn.playerId, action: turn.action, accepted: turn.accepted, attempt: turn.attempt,
-              latencyMs: turn.latencyMs, inputTokens: turn.inputTokens, outputTokens: turn.outputTokens,
-              state: adapter.publicStateFor("spectator"),
-            },
+          await publish("turn", { kind: "public" }, {
+            playerId: turn.playerId,
+            action: turn.accepted ? turn.action : null,
+            accepted: turn.accepted,
+            attempt: turn.attempt,
+            latencyMs: turn.latencyMs,
+            inputTokens: turn.inputTokens,
+            outputTokens: turn.outputTokens,
+            state: adapter.publicStateFor("spectator"),
           });
         },
       },
     });
+
     const winner = adapter.result().scores;
     const metrics = (["red", "blue"] as const).map((team) => {
       const relevant = run.turns.filter((turn) => turn.playerId.startsWith(`${team}-`));
@@ -35,13 +61,11 @@ export const codenamesDefinition: GameDefinition<"codenames"> = {
         outputTokens: relevant.reduce((sum, turn) => sum + turn.outputTokens, 0),
       };
     });
-    await context.events.publish({
-      sequence: 0, runId: context.runId, gameType: "codenames", type: "match_completed",
-      timestamp: new Date().toISOString(), audience: { kind: "postgame" },
-      matchId: String(context.matchNumber), payload: {
-        metrics,
-        games: [{ gameId: `codenames-${context.matchNumber}`, result: run.result, finalState: run.finalState }],
-      },
+    await publish("match_completed", { kind: "postgame" }, {
+      metrics,
+      // finalState carries the full key so a completed game can flip every card
+      // for the operative and spectators.
+      games: [{ gameId: `codenames-${matchId}`, result: run.result, finalState: run.finalState }],
     });
     return { metrics };
   },
