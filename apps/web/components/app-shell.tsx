@@ -1,12 +1,6 @@
 import Link from "next/link";
-import { BlocksIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  NavigationMenu,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-} from "@/components/ui/navigation-menu";
+import { PrimaryNav } from "@/components/primary-nav";
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   return (
@@ -19,20 +13,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </span>
           </Link>
 
-          <NavigationMenu aria-label="Primary navigation">
-            <NavigationMenuList className="rounded-xl border bg-card/70 p-1 shadow-sm">
-              <NavigationMenuItem>
-                <NavigationMenuLink data-active href="/#games">
-                  Play
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-              <NavigationMenuItem>
-                <NavigationMenuLink href="/leaderboard/wordle">
-                  Leaderboard
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-            </NavigationMenuList>
-          </NavigationMenu>
+          <PrimaryNav />
         </div>
       </header>
 
