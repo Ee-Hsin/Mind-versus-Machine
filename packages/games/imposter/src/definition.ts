@@ -17,7 +17,8 @@ export const imposterDefinition: GameDefinition<"imposter"> = {
       const relevant = run.turns.filter((turn) => turn.playerId === seat);
       const role: ImposterAlignment = seat === imposter ? "imposter" : "crew";
       return {
-        actorId: seat,
+        actorId: context.players[seat]?.id ?? seat,
+        seat,
         role,
         won: scores[seat] === 1,
         score: scores[seat] ?? 0,
@@ -26,6 +27,14 @@ export const imposterDefinition: GameDefinition<"imposter"> = {
         inputTokens: relevant.reduce((sum, turn) => sum + turn.inputTokens, 0),
         outputTokens: relevant.reduce((sum, turn) => sum + turn.outputTokens, 0),
       };
+    });
+    await context.events.publish({
+      sequence: 0, runId: context.runId, gameType: "imposter", type: "match_completed",
+      timestamp: new Date().toISOString(), audience: { kind: "postgame" },
+      matchId: String(context.matchNumber), payload: {
+        metrics,
+        games: [{ gameId: `imposter-${context.matchNumber}`, result: adapter.result(), finalState: model.serialize() }],
+      },
     });
     return { metrics };
   },

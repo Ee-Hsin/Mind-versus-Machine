@@ -12,7 +12,7 @@ export interface HumanTurnRow {
 }
 export interface RatingRow { model: string; gameType: string; elo: number; gamesPlayed: number }
 export interface ReplayRow {
-  runId: string; matchId: string; gameType: string; replay: unknown; completedAt: string;
+  runId: string; matchId: string; gameType: string; replay: unknown; completedAt: string; config?: RunConfig;
 }
 
 export class SupabaseArenaRepository implements ArenaRepository {
@@ -148,6 +148,20 @@ export class SupabaseArenaRepository implements ArenaRepository {
       gameType: row.game_type,
       replay: row.replay,
       completedAt: row.completed_at,
+    }));
+  }
+
+  async listReplaysByGame(gameType: string, limit = 1000): Promise<ReplayRow[]> {
+    const { data, error } = await this.client.from("arena_game_replays").select("*, arena_runs(config)")
+      .eq("game_type", gameType).order("completed_at", { ascending: false }).limit(limit);
+    if (error) throw error;
+    return (data ?? []).map((row) => ({
+      runId: row.run_id,
+      matchId: row.match_id,
+      gameType: row.game_type,
+      replay: row.replay,
+      completedAt: row.completed_at,
+      config: (row.arena_runs as { config?: RunConfig } | null)?.config,
     }));
   }
 

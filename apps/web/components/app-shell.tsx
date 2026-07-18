@@ -1,12 +1,6 @@
 import Link from "next/link";
-import { BlocksIcon } from "lucide-react";
 import type { ReactNode } from "react";
-import {
-  NavigationMenu,
-  NavigationMenuItem,
-  NavigationMenuLink,
-  NavigationMenuList,
-} from "@/components/ui/navigation-menu";
+import { PrimaryNav } from "@/components/primary-nav";
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   return (
@@ -15,24 +9,11 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
         <div className="mx-auto flex h-16 w-full max-w-[96rem] items-center justify-between gap-6 px-4 sm:px-6">
           <Link className="flex items-center gap-2.5" href="/">
             <span className="font-heading text-sm font-semibold">
-              AI Ramp Games
+              The Intangible Game
             </span>
           </Link>
 
-          <NavigationMenu aria-label="Primary navigation">
-            <NavigationMenuList className="rounded-xl border bg-card/70 p-1 shadow-sm">
-              <NavigationMenuItem>
-                <NavigationMenuLink data-active href="/#games">
-                  Play
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-              <NavigationMenuItem>
-                <NavigationMenuLink href="/#evaluation">
-                  Evaluate
-                </NavigationMenuLink>
-              </NavigationMenuItem>
-            </NavigationMenuList>
-          </NavigationMenu>
+          <PrimaryNav />
         </div>
       </header>
 

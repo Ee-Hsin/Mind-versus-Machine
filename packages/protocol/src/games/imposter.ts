@@ -67,6 +67,7 @@ export interface ImposterPublicState {
 }
 
 export interface ImposterMetrics extends BaseGameMetrics {
+  seat: ImposterSeat;
   role: ImposterAlignment;
   won: boolean;
 }

@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { INITIAL_ELO, runPool, updateElo, type ModelPlayer } from "@ai-ramp/engine";
 import { codenamesModule } from "@ai-ramp/game-codenames";
+import { imposterModule } from "@ai-ramp/game-imposter";
 import { wordleModule } from "@ai-ramp/game-wordle";
 import { AiSdkModelPlayer } from "@ai-ramp/model-runtime";
-import type { ArenaEvent, RunConfig } from "@ai-ramp/protocol";
+import { IMPOSTER_SEATS, type ArenaEvent, type RunConfig } from "@ai-ramp/protocol";
 import { createSupabaseRepository } from "@ai-ramp/storage";
 import type { z } from "zod";
 
@@ -44,15 +45,18 @@ class RandomPlayer implements ModelPlayer {
   }
 }
 
-const game = argument("game", "wordle");
-if (game !== "wordle" && game !== "codenames") throw new Error(`Unknown game: ${game}`);
+const game = argument("game", "wordle") as "wordle" | "codenames" | "imposter";
+if (game !== "wordle" && game !== "codenames" && game !== "imposter") throw new Error(`Unknown game: ${game}`);
 const modelIds = argument("models", "random-a,random-b").split(",").map((id) => id.trim()).filter(Boolean);
 // Codenames is a two-team head-to-head; Wordle is an N-way heat (all models race the same word).
 if (game === "codenames" && modelIds.length !== 2) throw new Error("Codenames needs exactly two models: --models <a>,<b>");
+if (game === "imposter" && modelIds.length !== 6) throw new Error("Imposter needs exactly six models.");
 if (game === "wordle" && modelIds.length < 2) throw new Error("Wordle needs at least two models: --models <a>,<b>[,<c>,...]");
 const matches = Number(argument("n", "3"));
 const concurrency = Number(argument("concurrency", "2"));
-const player = (id: string): ModelPlayer => id.startsWith("random") ? new RandomPlayer(id, game) : new AiSdkModelPlayer(id);
+const player = (id: string): ModelPlayer => id.startsWith("random")
+  ? new RandomPlayer(id, game === "imposter" ? "codenames" : game)
+  : new AiSdkModelPlayer(id);
 
 const config: RunConfig = {
   gameType: game,
@@ -98,6 +102,18 @@ const tasks = Array.from({ length: matches }, (_, index) => async (): Promise<Ma
     const result = await wordleModule.definition.runMatch({
       runId, matchNumber: index + 1, config: config as RunConfig<"wordle">, events,
       players: Object.fromEntries(modelIds.map((id) => [id, player(id)])),
+    });
+    return {
+      metrics: result.metrics,
+      input: result.metrics.reduce((sum, value) => sum + value.inputTokens, 0),
+      output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0),
+      ms: Date.now() - startedMatch,
+    };
+  }
+  if (game === "imposter") {
+    const result = await imposterModule.definition.runMatch({
+      runId, matchNumber: index + 1, config: config as RunConfig<"imposter">, events,
+      players: Object.fromEntries(IMPOSTER_SEATS.map((seat, seatIndex) => [seat, player(modelIds[seatIndex])])),
     });
     return {
       metrics: result.metrics,
@@ -160,7 +176,7 @@ if (repository && persistedRun) {
           gamesPlayed: (stored.get(m)?.gamesPlayed ?? 0) + results.length,
         })));
       }
-    } else if (modelIds[0] !== modelIds[1]) {
+    } else if (game === "codenames" && modelIds[0] !== modelIds[1]) {
       // Codenames: two-way Elo from each match's red-perspective outcome.
       const [storedA, storedB] = await Promise.all([
         repository.loadRating(modelIds[0], game), repository.loadRating(modelIds[1], game),
@@ -217,9 +233,15 @@ if (game === "wordle") {
         `tok ${row.input}/${row.output}`,
     );
   });
-} else {
+} else if (game === "codenames") {
   const wins = results.filter((r) => r.metrics.find((m) => m.team === "red")?.won).length;
   console.log(`[codenames] ${modelIds[0]} (red) vs ${modelIds[1]} (blue): ${wins}W / ${results.length - wins}L`);
+} else {
+  const wins = new Map<string, number>(modelIds.map((id) => [id, 0]));
+  for (const result of results) for (const metric of result.metrics) {
+    if (metric.won) wins.set(metric.actorId, (wins.get(metric.actorId) ?? 0) + 1);
+  }
+  console.log(`[imposter] ${results.length} match(es): ${[...wins].map(([id, count]) => `${id} ${count}W`).join(", ")}`);
 }
 
 console.log(`Tokens: ${results.reduce((n, value) => n + value.input, 0)} in / ${results.reduce((n, value) => n + value.output, 0)} out`);
