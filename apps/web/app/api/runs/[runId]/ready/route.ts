@@ -14,7 +14,11 @@ export async function POST(request: Request, context: { params: Promise<{ runId:
     await repo.setParticipantReady(runId, tokenHash(token));
     const participants = await repo.listParticipants(runId);
     const required = run.config.gameType === "codenames" ? 2 : 1;
-    if (participants.length >= required && participants.every((participant) => participant.ready)) await repo.queueRun(runId);
-    return Response.json({ ok: true, queued: participants.length >= required && participants.every((participant) => participant.ready) });
+    const ready = participants.length >= required && participants.every((participant) => participant.ready);
+    if (ready) {
+      if (run.config.gameType === "imposter") await repo.queueImposterRun(runId);
+      else await repo.queueRun(runId);
+    }
+    return Response.json({ ok: true, queued: ready });
   } catch (error) { return apiError(error); }
 }

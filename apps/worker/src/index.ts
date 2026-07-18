@@ -50,10 +50,20 @@ async function execute(run: RunSummary, signal: AbortSignal) {
     return wordleModule.definition.runMatch({ ...contextBase, config: run.config as RunConfig<"wordle">, players });
   }
   if (run.config.gameType === "imposter") {
-    if (models.length !== IMPOSTER_SEATS.length) throw new Error("Imposter requires exactly six models.");
+    const play = run.config.mode === "play";
+    const expectedModels = play ? 5 : 6;
+    if (models.length !== expectedModels) {
+      throw new Error(`Imposter ${run.config.mode} mode requires exactly ${expectedModels} models.`);
+    }
+    const modelSeats = play ? IMPOSTER_SEATS.slice(1) : IMPOSTER_SEATS;
+    const players: Record<string, ModelPlayer> = Object.fromEntries(
+      modelSeats.map((seat, index) => [seat, player(models[index].id)]),
+    );
+    if (play) players.P1 = new HumanPlayer("P1", run.id, repository);
     return imposterModule.definition.runMatch({
-      ...contextBase, config: run.config as RunConfig<"imposter">,
-      players: Object.fromEntries(IMPOSTER_SEATS.map((seat, index) => [seat, player(models[index].id)])),
+      ...contextBase,
+      config: run.config as RunConfig<"imposter">,
+      players,
     });
   }
   if (models.length !== 2) throw new Error("Codenames requires exactly two models.");
@@ -86,20 +96,33 @@ async function processRun(run: RunSummary) {
     } finally { clearInterval(monitor); }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (await repository.isCancellationRequested(run.id)) await repository.cancelRun(run.id);
-    else await repository.failRun(run.id, message);
     console.error(`Run ${run.id} failed:`, error);
+    try {
+      if (await repository.isCancellationRequested(run.id)) await repository.cancelRun(run.id);
+      else await repository.failRun(run.id, message);
+    } catch (reportError) {
+      console.error(`Could not persist failure for run ${run.id}:`, reportError);
+    }
   }
 }
 
-console.log(`Worker ${workerId} started with ${concurrency} run slots.`);
+const configuredModelCount = (process.env.ARENA_MODELS ?? "").split(",").filter((id) => id.trim()).length;
+console.log(`Worker ${workerId} started with ${concurrency} run slots and ${configuredModelCount} configured models.`);
 const activeRuns = new Set<Promise<void>>();
 while (true) {
   if (activeRuns.size >= concurrency) {
     await Promise.race(activeRuns);
     continue;
   }
-  const run = await repository.claimNextRun(workerId);
+  let run: RunSummary | null;
+  try {
+    run = await repository.claimNextImposterRun(workerId);
+    if (!run) run = await repository.claimNextRun(workerId);
+  } catch (error) {
+    console.error("Worker queue poll failed; retrying:", error);
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    continue;
+  }
   if (!run) {
     await new Promise((resolve) => setTimeout(resolve, pollMs));
     continue;

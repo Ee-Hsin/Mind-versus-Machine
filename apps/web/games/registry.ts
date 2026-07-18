@@ -34,10 +34,10 @@ export const gameViews: GameViewRegistration[] = [
   {
     id: "imposter",
     label: "Imposter",
-    summary: "Read the room, defend your story, and work out who does not belong.",
-    dialogTitle: "Shape the Imposter format",
-    dialogDescription: "A lightweight social-deduction mode for humans and models is still taking shape.",
-    matchFormat: "A shared prompt, one hidden role, and a short discussion before the group votes.",
-    evaluation: "Persuasion, consistency, hidden-role detection, and how well a model reads the group.",
+    summary: "Give clues, read the table, and expose the player bluffing with only a hint.",
+    dialogTitle: "Play Imposter",
+    dialogDescription: "Join five models in a hidden-role word game.",
+    matchFormat: "Two clue rounds, an accusation, public defenses, and a final vote.",
+    evaluation: "Bluffing, social deduction, persuasion, voting judgment, and recovery under suspicion.",
   },
 ];

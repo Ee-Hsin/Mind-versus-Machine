@@ -6,10 +6,10 @@ export const imposterAlignmentSchema = z.enum(["crew", "imposter"]);
 export const imposterConfigSchema = z.object({});
 
 export const imposterActionSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("clue"), word: z.string().min(1) }),
+  z.object({ type: z.literal("clue"), word: z.string() }),
   z.object({ type: z.literal("vote"), target: imposterSeatSchema }),
-  z.object({ type: z.literal("defend"), message: z.string().min(1), pointAt: imposterSeatSchema.optional() }),
-  z.object({ type: z.literal("guess"), word: z.string().min(1) }),
+  z.object({ type: z.literal("defend"), message: z.string(), pointAt: imposterSeatSchema.optional() }),
+  z.object({ type: z.literal("guess"), word: z.string() }),
 ]);
 
 export const imposterDecisionSchema = z.object({
@@ -44,12 +44,35 @@ export interface ImposterClueView {
   word: string;
 }
 
+export type ImposterPublicLogEntry =
+  | { kind: "clue"; seat: ImposterSeat; word: string }
+  | {
+      kind: "vote";
+      vote: "accuse" | "final";
+      attempt: number;
+      votes: Record<ImposterSeat, ImposterSeat>;
+      tied: ImposterSeat[] | null;
+      winner: ImposterSeat | null;
+      forced: boolean;
+    }
+  | {
+      kind: "defense";
+      context: "accused" | "rebuttal" | "tiebreak";
+      seat: ImposterSeat;
+      message: string;
+      pointAt: ImposterSeat | null;
+    }
+  | { kind: "steal"; word: string; correct: boolean };
+
 export interface ImposterPublicState {
   phase: ImposterPhase;
   seats: ImposterSeat[];
   speakingOrder: ImposterSeat[];
   currentSpeaker: ImposterSeat | null;
+  playersToAct: ImposterSeat[];
   clues: ImposterClueView[];
+  /** Attributed public history. Pending votes are intentionally omitted. */
+  log: ImposterPublicLogEntry[];
   accused: ImposterSeat | null;
   pointedAt: ImposterSeat | null;
   eliminated: ImposterSeat | null;
@@ -60,6 +83,10 @@ export interface ImposterPublicState {
   viewer: ImposterSeat | null;
   /** The viewer's own alignment — role-safe: null unless it's their own seat or the game is over. */
   viewerRole: ImposterAlignment | null;
+  /** The viewer's own pending vote. Other pending votes are never exposed. */
+  yourVote: ImposterSeat | null;
+  /** All roles are revealed only after the match ends. */
+  revealedRoles: Record<ImposterSeat, ImposterAlignment> | null;
   /** The secret word — visible to crew (or everyone once the game is over), else null. */
   word: string | null;
   /** The imposter's hint — visible to the imposter (or everyone once the game is over), else null. */

@@ -15,6 +15,8 @@ export interface ReplayRow {
   runId: string; matchId: string; gameType: string; replay: unknown; completedAt: string; config?: RunConfig;
 }
 
+export const IMPOSTER_PENDING_WORKER = "imposter-v2-pending";
+
 export class SupabaseArenaRepository implements ArenaRepository {
   constructor(private readonly client: SupabaseClient) {}
 
@@ -197,10 +199,34 @@ export class SupabaseArenaRepository implements ArenaRepository {
     return data ? mapRun(data as Record<string, unknown>) : null;
   }
 
+  async claimNextImposterRun(workerId: string): Promise<RunSummary | null> {
+    const { data: pending, error: selectError } = await this.client.from("arena_runs").select("id")
+      .eq("status", "running").eq("worker_id", IMPOSTER_PENDING_WORKER)
+      .eq("cancellation_requested", false).order("created_at").limit(1).maybeSingle();
+    if (selectError) throw selectError;
+    if (!pending) return null;
+    const now = new Date().toISOString();
+    const { data, error } = await this.client.from("arena_runs").update({
+      worker_id: workerId, claimed_at: now, heartbeat_at: now, updated_at: now,
+    }).eq("id", pending.id).eq("status", "running").eq("worker_id", IMPOSTER_PENDING_WORKER)
+      .select().maybeSingle();
+    if (error) throw error;
+    return data ? mapRun(data as Record<string, unknown>) : null;
+  }
+
   async queueRun(runId: string): Promise<void> {
     const { error } = await this.client.from("arena_runs")
       .update({ status: "queued", updated_at: new Date().toISOString() })
       .eq("id", runId).eq("status", "lobby");
+    if (error) throw error;
+  }
+
+  async queueImposterRun(runId: string): Promise<void> {
+    const { error } = await this.client.from("arena_runs").update({
+      status: "running",
+      worker_id: IMPOSTER_PENDING_WORKER,
+      updated_at: new Date().toISOString(),
+    }).eq("id", runId).eq("status", "lobby");
     if (error) throw error;
   }
 

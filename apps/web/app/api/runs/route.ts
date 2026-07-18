@@ -29,7 +29,11 @@ export async function POST(request: Request) {
     const roomCode = parsed.data.gameType === "codenames" ? crypto.randomUUID().replace(/-/g, "").slice(0, 6).toUpperCase() : undefined;
     if (roomCode) await repo.setRoomCode(run.id, roomCode);
     const token = newParticipantToken();
-    const seatId = parsed.data.gameType === "wordle" ? "human-wordle" : `red-${parsed.data.hostRole}`;
+    const seatId = parsed.data.gameType === "wordle"
+      ? "human-wordle"
+      : parsed.data.gameType === "imposter"
+        ? "P1"
+        : `red-${parsed.data.hostRole}`;
     const participant = await repo.createParticipant({ runId: run.id, tokenHash: tokenHash(token),
       displayName: parsed.data.displayName, seatId, isHost: true });
     return Response.json({ run, participant, roomCode }, { status: 201,

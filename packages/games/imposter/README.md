@@ -15,7 +15,9 @@ role-safe projections).
 - A crew member voted out → Imposter wins; the Imposter voted out → it may guess
   the word to steal the win.
 - Actions are `{ type: "clue" }`, `{ type: "vote" }`, `{ type: "defend" }`, and
-  `{ type: "guess" }`. Benchmarks run one random game across the six models.
+  `{ type: "guess" }`. Models return actions directly; reasoning is not streamed.
+- Play mode seats the human at `P1` and five selected models at `P2`-`P6`.
+  Benchmarks run one random game across six models.
 
 ## Files
 

@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { CodenamesLaunchDialog } from "@/components/codenames/codenames-launch-dialog";
+import { ImposterLaunchDialog } from "@/components/imposter/imposter-launch-dialog";
 import { WordleLaunchDialog } from "@/components/wordle/wordle-launch-dialog";
 import type { GameViewId, GameViewRegistration } from "@/games/registry";
 
@@ -26,6 +27,7 @@ export function GameDialog({ game }: Readonly<{ game: GameViewRegistration }>) {
   const Icon = gameIcons[game.id];
   if (game.id === "wordle") return <WordleLaunchDialog game={game} icon={Icon} />;
   if (game.id === "codenames") return <CodenamesLaunchDialog game={game} icon={Icon} />;
+  if (game.id === "imposter") return <ImposterLaunchDialog game={game} icon={Icon} />;
 
   return (
     <Dialog>

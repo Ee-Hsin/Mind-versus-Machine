@@ -6,10 +6,72 @@ import { ImposterModel } from "./model";
 export const imposterDefinition: GameDefinition<"imposter"> = {
   gameType: "imposter",
   async runMatch(context) {
-    // Benchmark: one random game with each of the six models on a seat (P1..P6).
     const model = new ImposterModel();
     const adapter = new ImposterAdapter(model);
-    const run = await runAdapter(adapter, context.players, { signal: context.signal });
+    const timestamp = () => new Date().toISOString();
+
+    await context.events.publish({
+      sequence: 0,
+      runId: context.runId,
+      gameType: "imposter",
+      type: "match_started",
+      timestamp: timestamp(),
+      audience: { kind: "public" },
+      matchId: String(context.matchNumber),
+      payload: { state: adapter.publicStateFor("spectator") },
+    });
+    if (context.config.mode === "play") {
+      await context.events.publish({
+        sequence: 0,
+        runId: context.runId,
+        gameType: "imposter",
+        type: "seat_state",
+        timestamp: timestamp(),
+        audience: { kind: "seat", seatId: "P1" },
+        matchId: String(context.matchNumber),
+        gameId: "P1",
+        payload: { state: adapter.publicStateFor("P1") },
+      });
+    }
+
+    const run = await runAdapter(adapter, context.players, {
+      signal: context.signal,
+      observer: {
+        async onTurn(turn) {
+          const common = {
+            playerId: turn.playerId,
+            accepted: turn.accepted,
+            attempt: turn.attempt,
+            latencyMs: turn.latencyMs,
+            inputTokens: turn.inputTokens,
+            outputTokens: turn.outputTokens,
+          };
+          await context.events.publish({
+            sequence: 0,
+            runId: context.runId,
+            gameType: "imposter",
+            type: "turn",
+            timestamp: timestamp(),
+            audience: { kind: "public" },
+            matchId: String(context.matchNumber),
+            payload: { ...common, state: adapter.publicStateFor("spectator") },
+          });
+          if (context.config.mode === "play") {
+            await context.events.publish({
+              sequence: 0,
+              runId: context.runId,
+              gameType: "imposter",
+              type: "seat_state",
+              timestamp: timestamp(),
+              audience: { kind: "seat", seatId: "P1" },
+              matchId: String(context.matchNumber),
+              gameId: "P1",
+              payload: { ...common, state: adapter.publicStateFor("P1") },
+            });
+          }
+        },
+      },
+    });
 
     const scores = adapter.result().scores;
     const imposter = model.imposterSeat;
@@ -29,11 +91,16 @@ export const imposterDefinition: GameDefinition<"imposter"> = {
       };
     });
     await context.events.publish({
-      sequence: 0, runId: context.runId, gameType: "imposter", type: "match_completed",
-      timestamp: new Date().toISOString(), audience: { kind: "postgame" },
-      matchId: String(context.matchNumber), payload: {
+      sequence: 0,
+      runId: context.runId,
+      gameType: "imposter",
+      type: "match_completed",
+      timestamp: timestamp(),
+      audience: { kind: "postgame" },
+      matchId: String(context.matchNumber),
+      payload: {
         metrics,
-        games: [{ gameId: `imposter-${context.matchNumber}`, result: adapter.result(), finalState: model.serialize() }],
+        games: [{ gameId: `imposter-${context.matchNumber}`, result: run.result, finalState: run.finalState }],
       },
     });
     return { metrics };

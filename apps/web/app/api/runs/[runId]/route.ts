@@ -9,13 +9,13 @@ export async function GET(request: Request, context: { params: Promise<{ runId: 
     const repo = repository();
     const run = await repo.getRun(runId);
     if (!run) return Response.json({ error: "not_found" }, { status: 404 });
+    const token = participantToken(request);
+    const viewer = token ? await repo.getParticipant(runId, tokenHash(token)) : null;
     const allEvents = await repo.listEvents(runId);
+    const events = visibleEvents(allEvents, run.status, viewer?.seatId);
     const terminal = ["completed", "failed", "cancelled"].includes(run.status);
     const replays = terminal ? await repo.listReplays(runId) : [];
-    const token = participantToken(request);
     const participants = await repo.listParticipants(runId);
-    const viewer = token ? await repo.getParticipant(runId, tokenHash(token)) : null;
-    const events = visibleEvents(allEvents, run.status, viewer?.seatId);
     const pending = token ? await repo.pendingTurnFor(runId, tokenHash(token)) : null;
     const pendingTurn = pending ? {
       turnId: pending.id,

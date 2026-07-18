@@ -85,7 +85,8 @@ export function buildImposterLeaderboard(rows: ReplayRow[]): ImposterLeaderboard
 }
 
 function modelForSeat(row: ReplayRow, seat: string): string | null {
-  const index = Number(seat.slice(1)) - 1;
+  if (row.config?.mode === "play" && seat === "P1") return null;
+  const index = Number(seat.slice(1)) - (row.config?.mode === "play" ? 2 : 1);
   return Number.isInteger(index) ? row.config?.models[index]?.id ?? null : null;
 }
 function inverseRanks(items: Acc[], value: (item: Acc) => number): Map<string, number> {

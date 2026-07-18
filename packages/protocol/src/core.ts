@@ -23,6 +23,11 @@ export const createPlayRunRequestSchema = z.discriminatedUnion("gameType", [
     displayName: z.string().trim().min(1).max(40),
     hostRole: codenamesRoleSchema,
   }),
+  z.object({
+    gameType: z.literal("imposter"),
+    modelIds: z.array(z.string().min(1)).length(5),
+    displayName: z.string().trim().min(1).max(40),
+  }),
 ]);
 
 export const joinRoomRequestSchema = z.object({
