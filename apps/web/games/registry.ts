@@ -20,7 +20,7 @@ export const gameViews: GameViewRegistration[] = [
     dialogTitle: "Play Wordle against the models",
     dialogDescription: "You and the selected models solve one hidden word on separate boards.",
     matchFormat: "Six guesses each. Model boards and commentary stay sealed until your game ends.",
-    evaluation: "Solve rate, guesses used, invalid moves, and the reasoning revealed after the match.",
+    evaluation: "Solve rate, guesses used, invalid moves, and each model's route to the answer.",
   },
   {
     id: "codenames",

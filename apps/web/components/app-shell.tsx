@@ -22,12 +22,12 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
           <NavigationMenu aria-label="Primary navigation">
             <NavigationMenuList className="rounded-xl border bg-card/70 p-1 shadow-sm">
               <NavigationMenuItem>
-                <NavigationMenuLink data-active href="#games">
+                <NavigationMenuLink data-active href="/#games">
                   Play
                 </NavigationMenuLink>
               </NavigationMenuItem>
               <NavigationMenuItem>
-                <NavigationMenuLink href="#evaluation">
+                <NavigationMenuLink href="/#evaluation">
                   Evaluate
                 </NavigationMenuLink>
               </NavigationMenuItem>

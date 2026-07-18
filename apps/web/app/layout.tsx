@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono"
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
   return (
-    <html lang="en" className={`dark ${geist.variable} ${geistMono.variable}`}>
+    <html data-scroll-behavior="smooth" lang="en" className={`dark ${geist.variable} ${geistMono.variable}`}>
       <body className="min-h-svh">
         <AppShell>{children}</AppShell>
       </body>

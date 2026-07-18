@@ -10,6 +10,7 @@ import type { z } from "zod";
 const repository = createSupabaseRepository();
 const workerId = process.env.WORKER_ID ?? `worker-${randomUUID()}`;
 const pollMs = Number(process.env.WORKER_POLL_MS ?? "1000");
+const concurrency = Math.max(1, Number(process.env.WORKER_CONCURRENCY ?? "6"));
 
 class HumanPlayer implements ModelPlayer {
   private turnNumber = 0;
@@ -61,13 +62,7 @@ async function execute(run: RunSummary, signal: AbortSignal) {
   });
 }
 
-console.log(`Worker ${workerId} started.`);
-while (true) {
-  const run = await repository.claimNextRun(workerId);
-  if (!run) {
-    await new Promise((resolve) => setTimeout(resolve, pollMs));
-    continue;
-  }
+async function processRun(run: RunSummary) {
   try {
     const controller = new AbortController();
     const monitor = setInterval(async () => {
@@ -87,4 +82,21 @@ while (true) {
     else await repository.failRun(run.id, message);
     console.error(`Run ${run.id} failed:`, error);
   }
+}
+
+console.log(`Worker ${workerId} started with ${concurrency} run slots.`);
+const activeRuns = new Set<Promise<void>>();
+while (true) {
+  if (activeRuns.size >= concurrency) {
+    await Promise.race(activeRuns);
+    continue;
+  }
+  const run = await repository.claimNextRun(workerId);
+  if (!run) {
+    await new Promise((resolve) => setTimeout(resolve, pollMs));
+    continue;
+  }
+  let task: Promise<void>;
+  task = processRun(run).finally(() => activeRuns.delete(task));
+  activeRuns.add(task);
 }
