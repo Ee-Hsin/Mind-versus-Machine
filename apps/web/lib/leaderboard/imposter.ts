@@ -5,7 +5,7 @@ interface Metric { actorId: string; seat?: string; role: "crew" | "imposter"; wo
   latencyMs: number; inputTokens: number; outputTokens: number }
 interface Move { type: string; seat?: string; target?: string }
 interface State { imposter?: string; moves?: Move[] }
-interface Replay { metrics?: Metric[]; games?: { finalState?: State }[] }
+interface Replay { metrics?: Metric[]; games?: { result?: { summary?: string }; finalState?: State }[] }
 interface Acc { modelId: string; games: number; wins: number; crewGames: number; crewWins: number; imposterGames: number;
   imposterWins: number; crewAccusations: number; correctCrewAccusations: number; deceptionAttempts: number;
   playersDeceived: number; actions: number; invalid: number; latency: number;
@@ -20,6 +20,8 @@ export function buildImposterLeaderboard(rows: ReplayRow[]): ImposterLeaderboard
   const values = new Map<string, Acc>();
   for (const row of rows) {
     const replay = row.replay as Replay | null;
+    const summary = replay?.games?.[0]?.result?.summary ?? "";
+    if (summary.startsWith("Abandoned") || summary === "Game is still in progress.") continue;
     const state = replay?.games?.[0]?.finalState;
     for (const metric of replay?.metrics ?? []) {
       const seat = metric.seat ?? metric.actorId;

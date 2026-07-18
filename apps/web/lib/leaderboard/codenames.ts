@@ -19,6 +19,8 @@ export function buildCodenamesLeaderboard(rows: ReplayRow[]): CodenamesLeaderboa
   const values = new Map<string, Acc>();
   for (const row of rows) {
     const replay = row.replay as Replay | null;
+    const summary = replay?.games?.[0]?.result?.summary ?? "";
+    if (summary.startsWith("Abandoned") || summary === "Game is still in progress.") continue;
     for (const metric of replay?.metrics ?? []) {
       const modelId = resolveModel(metric, row);
       if (!modelId || modelId.startsWith("human")) continue;
