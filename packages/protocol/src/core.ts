@@ -25,7 +25,7 @@ export const createPlayRunRequestSchema = z.discriminatedUnion("gameType", [
   }),
   z.object({
     gameType: z.literal("imposter"),
-    modelIds: z.array(z.string().min(1)).length(5),
+    modelIds: z.tuple([z.string().min(1), z.string().min(1)]),
     displayName: z.string().trim().min(1).max(40),
   }),
 ]);

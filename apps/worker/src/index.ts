@@ -51,13 +51,13 @@ async function execute(run: RunSummary, signal: AbortSignal) {
   }
   if (run.config.gameType === "imposter") {
     const play = run.config.mode === "play";
-    const expectedModels = play ? 5 : 6;
+    const expectedModels = play ? 2 : 6;
     if (models.length !== expectedModels) {
       throw new Error(`Imposter ${run.config.mode} mode requires exactly ${expectedModels} models.`);
     }
     const modelSeats = play ? IMPOSTER_SEATS.slice(1) : IMPOSTER_SEATS;
     const players: Record<string, ModelPlayer> = Object.fromEntries(
-      modelSeats.map((seat, index) => [seat, player(models[index].id)]),
+      modelSeats.map((seat, index) => [seat, player(models[index % models.length].id)]),
     );
     if (play) players.P1 = new HumanPlayer("P1", run.id, repository);
     return imposterModule.definition.runMatch({

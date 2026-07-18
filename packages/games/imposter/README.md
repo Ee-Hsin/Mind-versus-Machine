@@ -16,7 +16,7 @@ role-safe projections).
   the word to steal the win.
 - Actions are `{ type: "clue" }`, `{ type: "vote" }`, `{ type: "defend" }`, and
   `{ type: "guess" }`. Models return actions directly; reasoning is not streamed.
-- Play mode seats the human at `P1` and five selected models at `P2`-`P6`.
+- Play mode seats the human at `P1` and alternates two selected models across `P2`-`P6`.
   Benchmarks run one random game across six models.
 
 ## Files

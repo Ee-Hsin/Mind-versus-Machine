@@ -87,7 +87,8 @@ export function buildImposterLeaderboard(rows: ReplayRow[]): ImposterLeaderboard
 function modelForSeat(row: ReplayRow, seat: string): string | null {
   if (row.config?.mode === "play" && seat === "P1") return null;
   const index = Number(seat.slice(1)) - (row.config?.mode === "play" ? 2 : 1);
-  return Number.isInteger(index) ? row.config?.models[index]?.id ?? null : null;
+  const models = row.config?.models ?? [];
+  return Number.isInteger(index) && models.length ? models[index % models.length]?.id ?? null : null;
 }
 function inverseRanks(items: Acc[], value: (item: Acc) => number): Map<string, number> {
   const sorted = [...items].sort((a, b) => value(a) - value(b));

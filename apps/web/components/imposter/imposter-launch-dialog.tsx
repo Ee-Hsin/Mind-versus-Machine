@@ -60,7 +60,7 @@ export function ImposterLaunchDialog({
       .then((catalog) => {
         if (!active) return;
         setModels(catalog.models);
-        setSelectedIds(catalog.models.slice(0, 5).map((model) => model.id));
+        setSelectedIds(catalog.models.slice(0, 2).map((model) => model.id));
         setCatalogState("ready");
       })
       .catch(() => {
@@ -73,7 +73,7 @@ export function ImposterLaunchDialog({
 
   function toggleModel(modelId: string, checked: boolean) {
     setSelectedIds((current) => {
-      if (checked) return current.includes(modelId) || current.length >= 5 ? current : [...current, modelId];
+      if (checked) return current.includes(modelId) || current.length >= 2 ? current : [...current, modelId];
       return current.filter((id) => id !== modelId);
     });
     setError(null);
@@ -82,8 +82,8 @@ export function ImposterLaunchDialog({
   async function launch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const name = displayName.trim();
-    if (!name || selectedIds.length !== 5) {
-      setError(!name ? "Enter a player name." : "Choose exactly five models.");
+    if (!name || selectedIds.length !== 2) {
+      setError(!name ? "Enter a player name." : "Choose exactly two models.");
       return;
     }
 
@@ -131,7 +131,7 @@ export function ImposterLaunchDialog({
         <DialogHeader>
           <DialogTitle>Choose the table</DialogTitle>
           <DialogDescription>
-            You join five models. Crew sees the word; the hidden Imposter gets only a hint.
+            You join five AI players powered by two models. Crew sees the word; the Imposter gets only a hint.
           </DialogDescription>
         </DialogHeader>
 
@@ -154,7 +154,7 @@ export function ImposterLaunchDialog({
 
             <FieldSet>
               <FieldLegend variant="label">Model players</FieldLegend>
-              <FieldDescription>Choose exactly five. Roles and speaking order are assigned after launch.</FieldDescription>
+              <FieldDescription>Choose exactly two. They alternate across the five AI seats.</FieldDescription>
               <FieldGroup data-slot="checkbox-group" className="max-h-64 overflow-y-auto rounded-lg border p-2">
                 {catalogState === "loading" && (
                   <div className="flex min-h-24 items-center justify-center gap-2 text-muted-foreground">
@@ -164,7 +164,7 @@ export function ImposterLaunchDialog({
                 )}
                 {catalogState === "ready" && models.map((model) => {
                   const checked = selectedIds.includes(model.id);
-                  const disabled = !checked && selectedIds.length >= 5;
+                  const disabled = !checked && selectedIds.length >= 2;
                   return (
                     <Field data-disabled={disabled} key={model.id} orientation="horizontal">
                       <Checkbox
@@ -192,17 +192,17 @@ export function ImposterLaunchDialog({
               <AlertDescription>Check the web server configuration and try again.</AlertDescription>
             </Alert>
           )}
-          {catalogState === "ready" && models.length < 5 && (
+          {catalogState === "ready" && models.length < 2 && (
             <Alert>
-              <AlertTitle>Five models required</AlertTitle>
-              <AlertDescription>Add at least five model IDs to ARENA_MODELS before starting.</AlertDescription>
+              <AlertTitle>Two models required</AlertTitle>
+              <AlertDescription>Add at least two model IDs to ARENA_MODELS before starting.</AlertDescription>
             </Alert>
           )}
           {error && <FieldError>{error}</FieldError>}
 
           <DialogFooter showCloseButton>
             <Button
-              disabled={submitting || catalogState !== "ready" || models.length < 5 || selectedIds.length !== 5}
+              disabled={submitting || catalogState !== "ready" || models.length < 2 || selectedIds.length !== 2}
               type="submit"
             >
               {submitting ? <Spinner data-icon="inline-start" /> : <PlayIcon data-icon="inline-start" />}

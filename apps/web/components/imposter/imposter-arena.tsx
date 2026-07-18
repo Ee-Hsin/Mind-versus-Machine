@@ -548,7 +548,10 @@ function latestState(events: ArenaEvent<"imposter">[]): ImposterPublicState | nu
 function seatDetails(snapshot: ImposterSnapshot, state: ImposterPublicState | null): SeatDetails[] {
   const seats = state?.speakingOrder ?? (["P1", "P2", "P3", "P4", "P5", "P6"] as ImposterSeat[]);
   return seats.map((seat) => {
-    const model = seat === HUMAN_SEAT ? null : snapshot.run.config.models[Number(seat.slice(1)) - 2];
+    const modelIndex = Number(seat.slice(1)) - 2;
+    const model = seat === HUMAN_SEAT
+      ? null
+      : snapshot.run.config.models[modelIndex % snapshot.run.config.models.length];
     return {
       seat,
       name: seat === HUMAN_SEAT ? snapshot.viewer?.displayName ?? "You" : model?.displayName ?? seat,

@@ -9,7 +9,7 @@ export const imposterModule: GameModule<"imposter"> = {
     label: "Imposter",
     description: "Six players give clues, debate, and vote while one hidden Imposter bluffs with only a hint.",
     modes: ["play", "benchmark"],
-    modelCount: { min: 5, max: 6 },
+    modelCount: { min: 2, max: 6 },
     humanSeats: ["P1"],
     engineVersion: "runner-v1",
     promptVersion: IMPOSTER_PROMPT_VERSION,
