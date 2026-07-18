@@ -61,6 +61,10 @@ export function resolveModel(id: string): LanguageModel {
       name: "deepseek",
       baseURL: "https://api.deepseek.com",
       apiKey: process.env.DEEPSEEK_API_KEY,
+      transformRequestBody: (body) => ({
+        ...body,
+        thinking: { type: "disabled" },
+      }),
     }).chatModel(model);
   }
   throw new Error(`Unsupported model provider: ${provider}`);
