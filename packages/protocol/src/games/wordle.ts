@@ -3,8 +3,10 @@ import type { BaseGameMetrics, GameSpec } from "./types";
 
 export const wordleConfigSchema = z.object({});
 export const wordleActionSchema = z.object({
-  guess: z.string().regex(/^[A-Za-z]{5}$/)
-    .describe("Exactly one five-letter word containing letters only; put no reasoning or punctuation in this field"),
+  reasoning: z.string().optional().describe("Optional brief reasoning; never append this to the guess field"),
+  guess: z.string().min(5).transform((value) => value.trim().match(/^[A-Za-z]{5}/)?.[0] ?? value)
+    .pipe(z.string().regex(/^[A-Za-z]{5}$/))
+    .describe("Start with exactly one five-letter word; put any explanation in reasoning instead"),
 });
 export const wordleDecisionSchema = z.object({
   reasoning: z.string(),
