@@ -35,7 +35,7 @@ export class CodenamesModel {
   }
 
   publicState(role: CodenamesRole | "spectator"): CodenamesPublicState {
-    const visibleRole = role === "spymaster" || role === "spectator" ? "spymaster" : "operative";
+    const visibleRole = role === "spymaster" ? "spymaster" : "operative";
     const state = this.game.getPlayerState(visibleRole);
     const activeRole = state.phase === "clue" ? "spymaster" : "operative";
     return {

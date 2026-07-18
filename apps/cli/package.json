@@ -12,7 +12,8 @@
     "@ai-ramp/game-codenames": "*",
     "@ai-ramp/game-wordle": "*",
     "@ai-ramp/model-runtime": "*",
-    "@ai-ramp/protocol": "*"
+    "@ai-ramp/protocol": "*",
+    "@ai-ramp/storage": "*"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",

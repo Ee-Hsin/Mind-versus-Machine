@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
-import { runAdapter, runPool, type ModelPlayer } from "@ai-ramp/engine";
-import { CodenamesAdapter, CodenamesModel } from "@ai-ramp/game-codenames";
-import { WordleAdapter, WordleModel } from "@ai-ramp/game-wordle";
+import { INITIAL_ELO, runPool, updateElo, type ModelPlayer } from "@ai-ramp/engine";
+import { codenamesModule } from "@ai-ramp/game-codenames";
+import { wordleModule } from "@ai-ramp/game-wordle";
 import { AiSdkModelPlayer } from "@ai-ramp/model-runtime";
+import type { ArenaEvent, RunConfig } from "@ai-ramp/protocol";
+import { createSupabaseRepository } from "@ai-ramp/storage";
 import type { z } from "zod";
 
 function argument(name: string, fallback: string) {
@@ -41,31 +43,76 @@ const matches = Number(argument("n", "3"));
 const concurrency = Number(argument("concurrency", "2"));
 const player = (id: string): ModelPlayer => id.startsWith("random") ? new RandomPlayer(id, game) : new AiSdkModelPlayer(id);
 
+const config: RunConfig = {
+  gameType: game,
+  mode: "benchmark",
+  gameConfig: {},
+  models: modelIds.map((id) => ({ id, displayName: id })),
+  matches,
+  concurrency,
+};
+const hasDatabase = Boolean(process.env.SUPABASE_URL && (process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY));
+const repository = hasDatabase ? createSupabaseRepository() : null;
+const persistedRun = repository ? await repository.createRun(config, "running") : null;
+let sequence = 0;
+const events = {
+  async publish(event: ArenaEvent) {
+    const sequenced = { ...event, sequence: ++sequence };
+    await repository?.appendEvent(sequenced);
+  },
+};
+
 const tasks = Array.from({ length: matches }, (_, index) => async () => {
+  const runId = persistedRun?.id ?? randomUUID();
   if (game === "wordle") {
-    const first = new WordleModel();
-    const state = first.serialize();
-    const a = new WordleAdapter("A", first);
-    const b = new WordleAdapter("B", new WordleModel({ answer: state.answer, guesses: [] }));
-    const [resultA, resultB] = await Promise.all([
-      runAdapter(a, { A: player(modelIds[0]) }),
-      runAdapter(b, { B: player(modelIds[1]) }),
-    ]);
-    const scoreA = resultA.result.scores.A ?? 0;
-    const scoreB = resultB.result.scores.B ?? 0;
-    return { outcome: scoreA > scoreB ? 1 : scoreA < scoreB ? 0 : 0.5, input: resultA.inputTokens + resultB.inputTokens, output: resultA.outputTokens + resultB.outputTokens };
+    const result = await wordleModule.definition.runMatch({
+      runId, matchNumber: index + 1, config: config as RunConfig<"wordle">, events,
+      players: Object.fromEntries(modelIds.map((id) => [id, player(id)])),
+    });
+    const [a, b] = result.metrics;
+    return { outcome: a.score > b.score ? 1 : a.score < b.score ? 0 : 0.5,
+      input: result.metrics.reduce((sum, value) => sum + value.inputTokens, 0),
+      output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0), metrics: result.metrics };
   }
-  const adapter = new CodenamesAdapter(new CodenamesModel());
-  const result = await runAdapter(adapter, {
-    "red-spymaster": player(modelIds[0]), "red-operative": player(modelIds[0]),
-    "blue-spymaster": player(modelIds[1]), "blue-operative": player(modelIds[1]),
+  const red = player(modelIds[0]);
+  const blue = player(modelIds[1]);
+  const result = await codenamesModule.definition.runMatch({
+    runId, matchNumber: index + 1, config: config as RunConfig<"codenames">, events,
+    players: { "red-spymaster": red, "red-operative": red, "blue-spymaster": blue, "blue-operative": blue },
   });
-  return { outcome: result.abandoned ? 0.5 : result.result.scores.red, input: result.inputTokens, output: result.outputTokens };
+  return { outcome: result.metrics.find((value) => value.team === "red")?.won ? 1 : 0,
+    input: result.metrics.reduce((sum, value) => sum + value.inputTokens, 0),
+    output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0), metrics: result.metrics };
 });
 
 const settled = await runPool(tasks, concurrency);
-const results = settled.flatMap((item) => item.status === "fulfilled" ? [item.value] : (console.error(item.reason), []));
+const results = settled.flatMap((item) => {
+  if (item.status === "fulfilled") return [item.value];
+  console.error("Match failed:", item.reason instanceof Error ? item.reason.message : String(item.reason));
+  return [];
+});
 const wins = results.filter(({ outcome }) => outcome === 1).length;
 const losses = results.filter(({ outcome }) => outcome === 0).length;
+if (repository && persistedRun) {
+  const failures = settled.filter((item) => item.status === "rejected");
+  if (failures.length) await repository.failRun(persistedRun.id, `${failures.length} match(es) failed.`);
+  else await repository.finishRun(persistedRun.id, { results: results.map(({ metrics }) => metrics) });
+  if (!failures.length && modelIds[0] !== modelIds[1] && results.length) {
+    const [storedA, storedB] = await Promise.all([
+      repository.loadRating(modelIds[0], game), repository.loadRating(modelIds[1], game),
+    ]);
+    let ratingA = storedA?.elo ?? INITIAL_ELO;
+    let ratingB = storedB?.elo ?? INITIAL_ELO;
+    for (const result of results) ({ ratingA, ratingB } = updateElo(ratingA, ratingB, result.outcome));
+    await Promise.all([
+      repository.saveRating({ model: modelIds[0], gameType: game, elo: ratingA,
+        gamesPlayed: (storedA?.gamesPlayed ?? 0) + results.length }),
+      repository.saveRating({ model: modelIds[1], gameType: game, elo: ratingB,
+        gamesPlayed: (storedB?.gamesPlayed ?? 0) + results.length }),
+    ]);
+  }
+  console.log(`Supabase run: ${persistedRun.id}`);
+  if (failures.length) process.exitCode = 1;
+}
 console.log(`[${game}] ${modelIds[0]} vs ${modelIds[1]}: ${wins}W / ${results.length - wins - losses}D / ${losses}L`);
 console.log(`Tokens: ${results.reduce((n, value) => n + value.input, 0)} in / ${results.reduce((n, value) => n + value.output, 0)} out`);

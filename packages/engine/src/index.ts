@@ -13,13 +13,6 @@ import type {
   RunSummary,
 } from "@ai-ramp/protocol";
 
-export class NotImplementedError extends Error {
-  constructor(capability: string) {
-    super(`${capability} is part of the architecture wireframe and has not been implemented yet.`);
-    this.name = "NotImplementedError";
-  }
-}
-
 export interface ActionResult {
   accepted: boolean;
   message?: string;
@@ -99,11 +92,17 @@ export interface ArenaEventSink {
 }
 
 export interface ArenaRepository {
+  createRun(config: RunConfig, status?: "queued" | "running" | "lobby"): Promise<RunSummary>;
   appendEvent(event: ArenaEvent): Promise<void>;
+  listEvents(runId: string, after?: number, limit?: number): Promise<ArenaEvent[]>;
   getRun(runId: string): Promise<RunSummary | null>;
   listRuns(limit?: number): Promise<RunSummary[]>;
   claimNextRun(workerId: string): Promise<RunSummary | null>;
+  queueRun(runId: string): Promise<void>;
   requestCancellation(runId: string): Promise<void>;
+  isCancellationRequested(runId: string): Promise<boolean>;
+  heartbeat(runId: string, workerId: string): Promise<void>;
+  cancelRun(runId: string): Promise<void>;
   finishRun(runId: string, result: unknown): Promise<void>;
   failRun(runId: string, error: string): Promise<void>;
 }

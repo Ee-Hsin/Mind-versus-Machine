@@ -1,7 +1,9 @@
-import { notImplemented } from "@/lib/api/not-implemented";
+import { codenamesModule } from "@ai-ramp/game-codenames";
+import { wordleModule } from "@ai-ramp/game-wordle";
+import { listConfiguredModels } from "@ai-ramp/model-runtime";
 
 export const runtime = "nodejs";
 
 export async function GET() {
-  return notImplemented("Catalog service");
+  return Response.json({ games: [wordleModule.manifest, codenamesModule.manifest], models: listConfiguredModels() });
 }
