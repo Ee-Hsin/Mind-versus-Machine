@@ -1,7 +1,8 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { cohere } from "@ai-sdk/cohere";
 import { google } from "@ai-sdk/google";
-import { createOpenAI, openai } from "@ai-sdk/openai";
+import { openai } from "@ai-sdk/openai";
+import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import { xai } from "@ai-sdk/xai";
 import { generateObject, NoObjectGeneratedError, type LanguageModel } from "ai";
 import type { ModelPlayer } from "@ai-ramp/engine";
@@ -19,7 +20,10 @@ export class AiSdkModelPlayer implements ModelPlayer {
   ) {
     const wrapped = !(schema instanceof z.ZodObject);
     const startedAt = Date.now();
-    let currentPrompt = prompt;
+    const basePrompt = this.id.startsWith("deepseek:")
+      ? `${prompt}\n\nReturn your response as a JSON object matching the requested schema.`
+      : prompt;
+    let currentPrompt = basePrompt;
     for (let structuredAttempt = 1; structuredAttempt <= 3; structuredAttempt++) {
       try {
         const { object, usage } = await generateObject({
@@ -36,7 +40,7 @@ export class AiSdkModelPlayer implements ModelPlayer {
         };
       } catch (error) {
         if (!NoObjectGeneratedError.isInstance(error) || structuredAttempt === 3) throw error;
-        currentPrompt = `${prompt}\n\nYour previous structured response was invalid. Return only an object that exactly matches the requested schema. Do not append explanations inside constrained fields.`;
+        currentPrompt = `${basePrompt}\n\nYour previous structured response was invalid. Return only an object that exactly matches the requested schema. Do not append explanations inside constrained fields.`;
       }
     }
     throw new Error("Structured output retry loop exhausted.");
@@ -53,11 +57,11 @@ export function resolveModel(id: string): LanguageModel {
   if (provider === "xai") return xai(model);
   if (provider === "cohere") return cohere(model);
   if (provider === "deepseek") {
-    return createOpenAI({
+    return createOpenAICompatible({
       name: "deepseek",
       baseURL: "https://api.deepseek.com",
       apiKey: process.env.DEEPSEEK_API_KEY,
-    }).chat(model);
+    }).chatModel(model);
   }
   throw new Error(`Unsupported model provider: ${provider}`);
 }
