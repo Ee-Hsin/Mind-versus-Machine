@@ -1,0 +1,20 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  background: #111310;
+  color: #f2f3ed;
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #111310; }
+main { width: min(960px, calc(100% - 40px)); margin: 0 auto; padding: 72px 0; }
+header { max-width: 680px; margin-bottom: 64px; }
+h1, h2, h3, p { margin-top: 0; }
+h1 { font-size: clamp(2.5rem, 8vw, 5rem); line-height: 1; margin-bottom: 24px; }
+h2 { font-size: 1rem; font-weight: 600; margin-bottom: 18px; }
+h3 { font-size: 1.25rem; margin-bottom: 0; }
+.eyebrow { color: #a9b391; font-family: ui-monospace, monospace; font-size: 0.75rem; text-transform: uppercase; }
+.lede { color: #b8bcb0; font-size: 1.05rem; line-height: 1.7; }
+.game-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; }
+article { min-height: 180px; display: flex; flex-direction: column; justify-content: space-between; padding: 20px; border: 1px solid #35382f; border-radius: 6px; background: #191c17; }
+article p:last-child { color: #b8bcb0; line-height: 1.5; margin-bottom: 0; }

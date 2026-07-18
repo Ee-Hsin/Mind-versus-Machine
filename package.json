@@ -1,0 +1,22 @@
+{
+  "name": "ai-ramp-games",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "npm@11.6.2",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/games/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @ai-ramp/web",
+    "dev:web": "npm run dev --workspace @ai-ramp/web",
+    "worker": "npm run start --workspace @ai-ramp/worker",
+    "cli": "npm run start --workspace @ai-ramp/cli --",
+    "build": "npm run build --workspace @ai-ramp/web",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^10.0.0"
+  }
+}
