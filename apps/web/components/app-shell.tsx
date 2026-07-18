@@ -27,8 +27,8 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                 </NavigationMenuLink>
               </NavigationMenuItem>
               <NavigationMenuItem>
-                <NavigationMenuLink href="/#evaluation">
-                  Evaluate
+                <NavigationMenuLink href="/leaderboard/wordle">
+                  Leaderboard
                 </NavigationMenuLink>
               </NavigationMenuItem>
             </NavigationMenuList>

@@ -8,7 +8,7 @@ export default function HomePage() {
         <h1 className="font-heading text-5xl leading-none font-semibold sm:text-6xl">AI Ramp Games</h1>
         <div className="flex flex-col gap-1.5 text-base leading-6 text-muted-foreground">
           <p>Play familiar games against leading AI models.</p>
-          <p id="evaluation">Every match doubles as a lightweight, transparent evaluation.</p>
+          <p>Every match doubles as a lightweight, transparent evaluation.</p>
         </div>
       </header>
 

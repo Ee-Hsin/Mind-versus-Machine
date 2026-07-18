@@ -26,7 +26,8 @@ export const codenamesDefinition: GameDefinition<"codenames"> = {
     const metrics = (["red", "blue"] as const).map((team) => {
       const relevant = run.turns.filter((turn) => turn.playerId.startsWith(`${team}-`));
       return {
-        actorId: team, team, won: winner[team] === 1, score: winner[team] ?? 0,
+        actorId: context.players[`${team}-spymaster`]?.id ?? team,
+        team, won: winner[team] === 1, score: winner[team] ?? 0,
         clues: relevant.filter((turn) => (turn.action as { type?: string } | null)?.type === "clue" && turn.accepted).length,
         guesses: relevant.filter((turn) => (turn.action as { type?: string } | null)?.type === "guess" && turn.accepted).length,
         invalidActions: relevant.filter((turn) => !turn.accepted).length,

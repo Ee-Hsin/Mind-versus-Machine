@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { ModelPlayer } from "@ai-ramp/engine";
-import type { ArenaEvent, RunConfig, RunSummary } from "@ai-ramp/protocol";
+import { IMPOSTER_SEATS, type ArenaEvent, type RunConfig, type RunSummary } from "@ai-ramp/protocol";
 import { codenamesModule } from "@ai-ramp/game-codenames";
+import { imposterModule } from "@ai-ramp/game-imposter";
 import { wordleModule } from "@ai-ramp/game-wordle";
 import { AiSdkModelPlayer } from "@ai-ramp/model-runtime";
 import { createSupabaseRepository, type SupabaseArenaRepository } from "@ai-ramp/storage";
@@ -47,6 +48,13 @@ async function execute(run: RunSummary, signal: AbortSignal) {
     const players: Record<string, ModelPlayer> = Object.fromEntries(models.map((model) => [model.id, player(model.id)]));
     if (run.config.mode === "play") players["human-wordle"] = new HumanPlayer("human-wordle", run.id, repository);
     return wordleModule.definition.runMatch({ ...contextBase, config: run.config as RunConfig<"wordle">, players });
+  }
+  if (run.config.gameType === "imposter") {
+    if (models.length !== IMPOSTER_SEATS.length) throw new Error("Imposter requires exactly six models.");
+    return imposterModule.definition.runMatch({
+      ...contextBase, config: run.config as RunConfig<"imposter">,
+      players: Object.fromEntries(IMPOSTER_SEATS.map((seat, index) => [seat, player(models[index].id)])),
+    });
   }
   if (models.length !== 2) throw new Error("Codenames requires exactly two models.");
   const red = player(models[0].id);
