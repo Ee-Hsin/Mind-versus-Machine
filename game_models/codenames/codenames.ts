@@ -4,15 +4,10 @@
 // only revealed cards), enforces the full turn flow, and logs every clue and
 // guess as both structured data and formatted text.
 //
-// Adapted to the ai-ramp-games engine/protocol API: the model is a pure function
-// of explicit canonical state ({ words, key, startingTeam, moves }), applies a
-// single unified action via `apply()`, exposes a role-safe `publicState()`
-// projection and an `activeSeat` getter, and is serializable via `serialize()`.
-// Random seeding lives outside the model; `CodenamesModel.newRandom()` is a
-// convenience for demos.
-//
-// The `Codenames*` types below mirror `@ai-ramp/protocol`; when this file moves
-// into `packages/games/codenames/src/model.ts`, swap them for imports.
+// Mirrors the conventions of the sibling wordle model: formatted-string views
+// are paired with structured-object views, and the game is serializable via
+// getState()/fromState()/toJSON(). The word pool is imported from the generated
+// ./codenamesWords module (extensionless; strict NodeNext ESM may need ".js").
 import { WORDS } from "./codenamesWords";
 
 // --- Types -----------------------------------------------------------------
@@ -85,58 +80,24 @@ export type Move =
   | { type: "guess"; word: string }
   | { type: "stop" };
 
-// --- Protocol-aligned aliases/types (mirror @ai-ramp/protocol) --------------
-
-export type CodenamesTeam = Team;
-export type CodenamesRole = Role;
-export type CodenamesCardColor = CardColor;
-/** A single unified action (clue / guess / stop) — same shape as {@link Move}. */
-export type CodenamesAction = Move;
-
-/** The four seats: one spymaster and one operative per team. */
-export type CodenamesSeat = "red-spymaster" | "red-operative" | "blue-spymaster" | "blue-operative";
-
-/** A card in the public projection — colour is `null` until revealed. */
-export interface CodenamesCardView {
-  word: string;
-  revealed: boolean;
-  color: CardColor | null;
+/** Options for constructing a game. All optional; used for seeded/deterministic play. */
+export interface CodenamesOptions {
+  /** Exactly 25 distinct words (board layout). Default: 25 drawn at random from WORDS. */
+  words?: readonly string[];
+  /** Exactly 25 colours aligned to `words`. Default: a valid random key. */
+  key?: readonly CardColor[];
+  /** Which team goes first (has 9 cards). Default: random, or derived from `key`. */
+  startingTeam?: Team;
 }
 
 /**
- * Canonical, serializable state — the four fields fully reconstruct the game via
- * the constructor or {@link CodenamesModel.fromState}. Contains the key, so it is
- * SERVER-SIDE ONLY: never send it to a live operative (use {@link CodenamesModel.publicState}).
+ * A FULL, serializable snapshot — for DB persistence, replay, and spectating.
+ * Contains the key, so it is SERVER-SIDE ONLY: never send it to a live operative
+ * (use {@link Codenames.getPlayerState}). Canonical fields (`words`, `key`,
+ * `startingTeam`, `moves`) fully reconstruct the game via {@link Codenames.fromState};
+ * the rest are derived for direct rendering.
  */
 export interface CodenamesState {
-  words: string[];
-  key: CardColor[];
-  startingTeam: Team;
-  moves: Move[];
-}
-
-/**
- * The role-safe public projection (mirrors the engine's `CodenamesPublicState`).
- * Operatives (and spectators) see unrevealed colours as `null`; only a spymaster
- * view sets `keyVisible` and shows every colour.
- */
-export interface CodenamesPublicState {
-  board: CodenamesCardView[];
-  currentTeam: CodenamesTeam;
-  phase: TurnPhase;
-  activeSeat: CodenamesSeat;
-  remaining: Record<CodenamesTeam, number>;
-  isGameOver: boolean;
-  winner: CodenamesTeam | null;
-  keyVisible: boolean;
-}
-
-/**
- * A FULL structured snapshot (superset of {@link CodenamesState}) — for DB
- * persistence, replay, and spectating. Contains the key, so SERVER-SIDE ONLY.
- * The canonical fields reconstruct the game; the rest are derived for rendering.
- */
-export interface CodenamesSnapshot {
   // canonical
   words: string[];
   key: CardColor[];
@@ -257,7 +218,7 @@ class Board {
 
 // --- Codenames game --------------------------------------------------------
 
-export class CodenamesModel {
+export class Codenames {
   static readonly BOARD_SIZE = BOARD_SIZE;
 
   private startingTeam: Team;
@@ -271,15 +232,22 @@ export class CodenamesModel {
   private _winner: Team | null;
   private _endReason: "all-cards" | "assassin" | null;
 
-  /**
-   * Build a game from canonical {@link CodenamesState}. The board is created from
-   * `words`/`key`, then `moves` are replayed via {@link apply} to reach the
-   * current position (throws if a stored move is illegal).
-   */
-  constructor(state: CodenamesState) {
-    this.startingTeam = state.startingTeam;
-    this._board = new Board(state.words, state.key);
-    this._currentTeam = state.startingTeam;
+  constructor(options: CodenamesOptions = {}) {
+    const words = (options.words ?? pickWords()).map(normalize);
+
+    let startingTeam: Team;
+    let key: CardColor[];
+    if (options.key) {
+      key = [...options.key];
+      startingTeam = options.startingTeam ?? deriveStartingTeam(key);
+    } else {
+      startingTeam = options.startingTeam ?? randomTeam();
+      key = buildKey(startingTeam);
+    }
+
+    this.startingTeam = startingTeam;
+    this._board = new Board(words, key);
+    this._currentTeam = startingTeam;
     this._phase = "clue";
     this._clue = null;
     this._guessesRemaining = 0;
@@ -287,47 +255,33 @@ export class CodenamesModel {
     this._log = [];
     this._winner = null;
     this._endReason = null;
-
-    for (const move of state.moves) {
-      if (!this.apply(move)) {
-        throw new Error(`Codenames: could not replay move ${JSON.stringify(move)}`);
-      }
-    }
   }
 
-  /** Convenience alias for the state constructor (round-trips {@link serialize}). */
-  static fromState(state: CodenamesState): CodenamesModel {
-    return new CodenamesModel(state);
-  }
-
-  /** Convenience for demos/tests: a fresh random board, key, and starting team. */
-  static newRandom(startingTeam: Team = randomTeam()): CodenamesModel {
-    return new CodenamesModel({
-      words: pickWords(),
-      key: buildKey(startingTeam),
-      startingTeam,
-      moves: [],
+  /** Rebuild a game from a persisted snapshot by replaying its canonical moves. */
+  static fromState(state: {
+    words: readonly string[];
+    key: readonly CardColor[];
+    startingTeam: Team;
+    moves: readonly Move[];
+  }): Codenames {
+    const game = new Codenames({
+      words: [...state.words],
+      key: [...state.key],
+      startingTeam: state.startingTeam,
     });
+    for (const move of state.moves) {
+      const ok =
+        move.type === "clue"
+          ? game.giveClue(move.word, move.number)
+          : move.type === "guess"
+            ? game.guess(move.word).accepted
+            : game.endGuessing();
+      if (!ok) throw new Error(`fromState: could not replay move ${JSON.stringify(move)}`);
+    }
+    return game;
   }
 
   // --- Actions (state machine) ---------------------------------------------
-
-  /**
-   * Apply one unified action. Dispatches to {@link giveClue} / {@link guess} /
-   * {@link endGuessing} and returns whether it was accepted. This is the entry
-   * point the engine adapter uses; the individual methods remain available for
-   * callers that need the richer {@link GuessResult}.
-   */
-  apply(action: CodenamesAction): boolean {
-    switch (action.type) {
-      case "clue":
-        return this.giveClue(action.word, action.number);
-      case "guess":
-        return this.guess(action.word).accepted;
-      case "stop":
-        return this.endGuessing();
-    }
-  }
 
   /**
    * Spymaster gives a clue. Returns `false` (no state change) if it's not the
@@ -434,6 +388,21 @@ export class CodenamesModel {
     return true;
   }
 
+  /** Start a brand-new game (fresh random words, key, and starting team). */
+  restartGame(): void {
+    const startingTeam = randomTeam();
+    this.startingTeam = startingTeam;
+    this._board = new Board(pickWords(), buildKey(startingTeam));
+    this._currentTeam = startingTeam;
+    this._phase = "clue";
+    this._clue = null;
+    this._guessesRemaining = 0;
+    this._moves = [];
+    this._log = [];
+    this._winner = null;
+    this._endReason = null;
+  }
+
   // --- Formatted (string) views: print these or hand them to an LLM ---------
 
   /** The board as an aligned 5×5 text grid for the given role. */
@@ -458,7 +427,7 @@ export class CodenamesModel {
   /**
    * The whole game as one role-appropriate string — status line, the role's
    * board, and the log. The one thing to hand an LLM each turn. Structured
-   * counterpart: {@link publicState} / {@link getPlayerState}.
+   * counterpart: {@link getPlayerState}.
    */
   formattedState(role: Role): string {
     return [this.statusLine(), "", this.formattedBoard(role), "", this.legend(role), "", "Log:", this.formattedLog].join(
@@ -483,37 +452,8 @@ export class CodenamesModel {
     }));
   }
 
-  /**
-   * The role-safe public projection handed to clients / the engine. Pass the
-   * viewer's role ("spymaster" sees every colour and sets `keyVisible`);
-   * "operative" and "spectator" see unrevealed colours as `null`.
-   */
-  publicState(viewer: Role | "spectator" = "spectator"): CodenamesPublicState {
-    const role: Role = viewer === "spymaster" ? "spymaster" : "operative";
-    return {
-      board: this._board.cardsFor(role).map((c) => ({ word: c.word, revealed: c.revealed, color: c.color ?? null })),
-      currentTeam: this._currentTeam,
-      phase: this._phase,
-      activeSeat: this.activeSeat,
-      remaining: this.remaining,
-      isGameOver: this.isGameOver,
-      winner: this._winner,
-      keyVisible: viewer === "spymaster",
-    };
-  }
-
-  /** Canonical serializable state — round-trips through the constructor. */
-  serialize(): CodenamesState {
-    return {
-      words: this._board.words(),
-      key: this._board.key(),
-      startingTeam: this.startingTeam,
-      moves: this._moves.map((m) => ({ ...m })),
-    };
-  }
-
   /** FULL snapshot — DB persistence, replay, spectating. SERVER-SIDE ONLY (has the key). */
-  getState(): CodenamesSnapshot {
+  getState(): CodenamesState {
     return {
       words: this._board.words(),
       key: this._board.key(),
@@ -550,17 +490,11 @@ export class CodenamesModel {
   }
 
   /** Alias so `JSON.stringify(game)` yields the full snapshot from {@link getState}. */
-  toJSON(): CodenamesSnapshot {
+  toJSON(): CodenamesState {
     return this.getState();
   }
 
   // --- State getters --------------------------------------------------------
-
-  /** The seat whose action the game is waiting on (team + role for the phase). */
-  get activeSeat(): CodenamesSeat {
-    const role: Role = this._phase === "clue" ? "spymaster" : "operative";
-    return `${this._currentTeam}-${role}` as CodenamesSeat;
-  }
 
   get currentTeam(): Team {
     return this._currentTeam;
@@ -673,6 +607,13 @@ function buildKey(startingTeam: Team): CardColor[] {
     ...(Array(ASSASSIN_COUNT).fill("assassin") as CardColor[]),
   ];
   return shuffle(colors);
+}
+
+/** Whichever team has more cards in the key goes first (ties default to red). */
+function deriveStartingTeam(key: readonly CardColor[]): Team {
+  const red = key.filter((c) => c === "red").length;
+  const blue = key.filter((c) => c === "blue").length;
+  return blue > red ? "blue" : "red";
 }
 
 function colorAbbrev(color: CardColor): string {

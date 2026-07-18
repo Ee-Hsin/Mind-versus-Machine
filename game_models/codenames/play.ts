@@ -12,7 +12,7 @@
 
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { CodenamesModel } from "./codenames";
+import { Codenames } from "./codenames";
 
 const rl = createInterface({ input, output });
 const rule = () => console.log("─".repeat(64));
@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   console.log("=== Codenames (hotseat — you play all four roles) ===");
   console.log("Type 'quit' at any prompt to exit.\n");
 
-  const game = CodenamesModel.newRandom();
+  const game = new Codenames();
 
   while (!game.isGameOver) {
     rule();
