@@ -1,15 +1,38 @@
 import { randomUUID } from "node:crypto";
+import type { ModelPlayer } from "@ai-ramp/engine";
 import type { ArenaEvent, RunConfig, RunSummary } from "@ai-ramp/protocol";
 import { codenamesModule } from "@ai-ramp/game-codenames";
 import { wordleModule } from "@ai-ramp/game-wordle";
 import { AiSdkModelPlayer } from "@ai-ramp/model-runtime";
-import { createSupabaseRepository } from "@ai-ramp/storage";
+import { createSupabaseRepository, type SupabaseArenaRepository } from "@ai-ramp/storage";
+import type { z } from "zod";
 
 const repository = createSupabaseRepository();
 const workerId = process.env.WORKER_ID ?? `worker-${randomUUID()}`;
 const pollMs = Number(process.env.WORKER_POLL_MS ?? "1000");
 
-async function execute(run: RunSummary) {
+class HumanPlayer implements ModelPlayer {
+  private turnNumber = 0;
+  constructor(readonly id: string, private runId: string, private repository: SupabaseArenaRepository) {}
+  async act<Action>(_system: string, _prompt: string, schema: z.ZodType<Action>, options?: { signal?: AbortSignal }) {
+    const turn = await this.repository.createHumanTurn({ runId: this.runId, gameId: this.id,
+      turnNumber: ++this.turnNumber, seatId: this.id });
+    const startedAt = Date.now();
+    while (!options?.signal?.aborted) {
+      const current = await this.repository.loadHumanTurn(turn.id);
+      if (current?.status === "submitted") {
+        const parsed = schema.safeParse(current.action);
+        if (!parsed.success) throw new Error("Submitted human action does not match the game schema.");
+        await this.repository.consumeHumanTurn(turn.id);
+        return { action: parsed.data, latencyMs: Date.now() - startedAt, inputTokens: 0, outputTokens: 0 };
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    throw options?.signal?.reason ?? new Error("Run cancelled.");
+  }
+}
+
+async function execute(run: RunSummary, signal: AbortSignal) {
   let sequence = 0;
   const events = {
     async publish(event: ArenaEvent) {
@@ -18,17 +41,23 @@ async function execute(run: RunSummary) {
   };
   const player = (id: string) => new AiSdkModelPlayer(id);
   const models = run.config.models;
-  const contextBase = { runId: run.id, matchNumber: 1, events };
+  const contextBase = { runId: run.id, matchNumber: 1, events, signal };
   if (run.config.gameType === "wordle") {
-    const players = Object.fromEntries(models.map((model) => [model.id, player(model.id)]));
+    const players: Record<string, ModelPlayer> = Object.fromEntries(models.map((model) => [model.id, player(model.id)]));
+    if (run.config.mode === "play") players["human-wordle"] = new HumanPlayer("human-wordle", run.id, repository);
     return wordleModule.definition.runMatch({ ...contextBase, config: run.config as RunConfig<"wordle">, players });
   }
   if (models.length !== 2) throw new Error("Codenames requires exactly two models.");
   const red = player(models[0].id);
   const blue = player(models[1].id);
+  const play = run.config.mode === "play";
   return codenamesModule.definition.runMatch({
     ...contextBase, config: run.config as RunConfig<"codenames">,
-    players: { "red-spymaster": red, "red-operative": red, "blue-spymaster": blue, "blue-operative": blue },
+    players: play ? {
+      "red-spymaster": new HumanPlayer("red-spymaster", run.id, repository),
+      "red-operative": new HumanPlayer("red-operative", run.id, repository),
+      "blue-spymaster": red, "blue-operative": blue,
+    } : { "red-spymaster": red, "red-operative": red, "blue-spymaster": blue, "blue-operative": blue },
   });
 }
 
@@ -40,11 +69,22 @@ while (true) {
     continue;
   }
   try {
-    const result = await execute(run);
-    await repository.finishRun(run.id, result);
+    const controller = new AbortController();
+    const monitor = setInterval(async () => {
+      try {
+        await repository.heartbeat(run.id, workerId);
+        if (await repository.isCancellationRequested(run.id)) controller.abort(new Error("Run cancelled."));
+      } catch (error) { console.error(`Run ${run.id} monitor failed:`, error); }
+    }, 2_000);
+    try {
+      const result = await execute(run, controller.signal);
+      if (controller.signal.aborted) await repository.cancelRun(run.id);
+      else await repository.finishRun(run.id, result);
+    } finally { clearInterval(monitor); }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await repository.failRun(run.id, message);
+    if (await repository.isCancellationRequested(run.id)) await repository.cancelRun(run.id);
+    else await repository.failRun(run.id, message);
     console.error(`Run ${run.id} failed:`, error);
   }
 }

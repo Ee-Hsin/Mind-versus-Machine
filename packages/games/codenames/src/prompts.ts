@@ -1,6 +1,6 @@
 import type { CodenamesRole, CodenamesTeam } from "@ai-ramp/protocol";
 
-export const CODENAMES_PROMPT_VERSION = "codenames-wireframe-v1";
+export const CODENAMES_PROMPT_VERSION = "codenames-v1";
 
 export function codenamesSystemPrompt(team: CodenamesTeam, role: CodenamesRole): string {
   if (role === "spymaster") {

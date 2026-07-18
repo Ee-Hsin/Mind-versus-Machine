@@ -3,7 +3,7 @@ import { cohere } from "@ai-sdk/cohere";
 import { google } from "@ai-sdk/google";
 import { createOpenAI, openai } from "@ai-sdk/openai";
 import { xai } from "@ai-sdk/xai";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject, NoObjectGeneratedError, type LanguageModel } from "ai";
 import type { ModelPlayer } from "@ai-ramp/engine";
 import type { ModelRef } from "@ai-ramp/protocol";
 import { z } from "zod";
@@ -19,18 +19,27 @@ export class AiSdkModelPlayer implements ModelPlayer {
   ) {
     const wrapped = !(schema instanceof z.ZodObject);
     const startedAt = Date.now();
-    const { object, usage } = await generateObject({
-      model: this.model, system, prompt,
-      schema: wrapped ? z.object({ response: schema }) : schema,
-      maxRetries: 5,
-      abortSignal: options?.signal,
-    });
-    return {
-      action: (wrapped ? (object as { response: Action }).response : object) as Action,
-      latencyMs: Date.now() - startedAt,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-    };
+    let currentPrompt = prompt;
+    for (let structuredAttempt = 1; structuredAttempt <= 3; structuredAttempt++) {
+      try {
+        const { object, usage } = await generateObject({
+          model: this.model, system, prompt: currentPrompt,
+          schema: wrapped ? z.object({ response: schema }) : schema,
+          maxRetries: 3,
+          abortSignal: options?.signal,
+        });
+        return {
+          action: (wrapped ? (object as { response: Action }).response : object) as Action,
+          latencyMs: Date.now() - startedAt,
+          inputTokens: usage.inputTokens,
+          outputTokens: usage.outputTokens,
+        };
+      } catch (error) {
+        if (!NoObjectGeneratedError.isInstance(error) || structuredAttempt === 3) throw error;
+        currentPrompt = `${prompt}\n\nYour previous structured response was invalid. Return only an object that exactly matches the requested schema. Do not append explanations inside constrained fields.`;
+      }
+    }
+    throw new Error("Structured output retry loop exhausted.");
   }
 }
 
