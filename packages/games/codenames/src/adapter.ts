@@ -42,7 +42,13 @@ export class CodenamesAdapter implements GameAdapter<"codenames"> {
   }
 
   result() {
-    return { scores: {}, summary: "Codenames result projection is not implemented." };
+    const winner = this.model.winner;
+    return {
+      scores: { red: winner === "red" ? 1 : 0, blue: winner === "blue" ? 1 : 0 },
+      summary: winner
+        ? `${winner.toUpperCase()} wins (${this.model.endReason}).`
+        : "Game is still in progress.",
+    };
   }
 
   publicStateFor(viewerId: string | "spectator" = "spectator"): CodenamesPublicState {

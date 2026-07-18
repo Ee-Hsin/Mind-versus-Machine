@@ -2,7 +2,7 @@ import { z } from "zod";
 import { codenamesRoleSchema } from "./games/codenames";
 import type { GameConfig, GameType } from "./games";
 
-export const RUNNER_VERSION = "wireframe-v1" as const;
+export const RUNNER_VERSION = "runner-v1" as const;
 export const runModeSchema = z.enum(["play", "benchmark"]);
 export const runStatusSchema = z.enum(["lobby", "queued", "running", "completed", "failed", "cancelled"]);
 

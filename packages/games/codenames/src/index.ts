@@ -11,7 +11,7 @@ export const codenamesModule: GameModule<"codenames"> = {
     modes: ["play", "benchmark"],
     modelCount: { min: 2, max: 2 },
     humanSeats: ["red-spymaster", "red-operative"],
-    engineVersion: "wireframe-v1",
+    engineVersion: "runner-v1",
     promptVersion: CODENAMES_PROMPT_VERSION,
   },
   configSchema: codenamesConfigSchema,

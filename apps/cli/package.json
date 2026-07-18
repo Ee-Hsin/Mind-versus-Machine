@@ -4,12 +4,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts",
+    "start": "dotenv -e ../../.env -- tsx src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ai-ramp/engine": "*",
     "@ai-ramp/game-codenames": "*",
     "@ai-ramp/game-wordle": "*",
+    "@ai-ramp/model-runtime": "*",
     "@ai-ramp/protocol": "*"
   },
   "devDependencies": {

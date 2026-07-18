@@ -11,7 +11,7 @@ export const wordleModule: GameModule<"wordle"> = {
     modes: ["play", "benchmark"],
     modelCount: { min: 1, max: 5 },
     humanSeats: ["human-wordle"],
-    engineVersion: "wireframe-v1",
+    engineVersion: "runner-v1",
     promptVersion: WORDLE_PROMPT_VERSION,
   },
   configSchema: wordleConfigSchema,

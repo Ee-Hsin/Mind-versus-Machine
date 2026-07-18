@@ -36,7 +36,12 @@ export class WordleAdapter implements GameAdapter<"wordle"> {
   result() {
     const state = this.model.publicState(true);
     const score = state.isWon ? state.triesRemaining + 1 : 0;
-    return { scores: { [this.playerId]: score }, summary: "Wordle result projection is not implemented." };
+    return {
+      scores: { [this.playerId]: score },
+      summary: state.isWon
+        ? `Won in ${state.guessesMade} tries. The word was ${state.answer}.`
+        : `Lost. The word was ${state.answer}.`,
+    };
   }
 
   publicStateFor(): WordlePublicState {

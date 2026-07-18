@@ -1,4 +1,3 @@
-import { NotImplementedError } from "@ai-ramp/engine";
 import type {
   CodenamesAction,
   CodenamesCardColor,
@@ -7,6 +6,7 @@ import type {
   CodenamesSeat,
   CodenamesTeam,
 } from "@ai-ramp/protocol";
+import { Codenames } from "../../../../game_models/codenames/codenames";
 
 export interface CodenamesState {
   words: string[];
@@ -15,38 +15,64 @@ export interface CodenamesState {
   moves: CodenamesAction[];
 }
 
-/** Pure Codenames rules and role projections belong here. */
+/** Package-local façade over the pure Codenames state machine. */
 export class CodenamesModel {
   static readonly BOARD_SIZE = 25;
+  private readonly game: Codenames;
 
-  constructor(readonly state: CodenamesState) {}
-
-  apply(_action: CodenamesAction): boolean {
-    throw new NotImplementedError("Codenames turn state machine");
+  constructor(state?: CodenamesState) {
+    this.game = state ? Codenames.fromState(state) : new Codenames();
   }
 
-  formattedState(_role: CodenamesRole): string {
-    throw new NotImplementedError("Codenames role-specific formatted view");
+  apply(action: CodenamesAction): boolean {
+    if (action.type === "clue") return this.game.giveClue(action.word, action.number);
+    if (action.type === "guess") return this.game.guess(action.word).accepted;
+    return this.game.endGuessing();
   }
 
-  publicState(_role: CodenamesRole | "spectator"): CodenamesPublicState {
-    throw new NotImplementedError("Codenames role-specific public state");
+  formattedState(role: CodenamesRole): string {
+    return this.game.formattedState(role);
+  }
+
+  publicState(role: CodenamesRole | "spectator"): CodenamesPublicState {
+    const visibleRole = role === "spymaster" || role === "spectator" ? "spymaster" : "operative";
+    const state = this.game.getPlayerState(visibleRole);
+    const activeRole = state.phase === "clue" ? "spymaster" : "operative";
+    return {
+      board: state.board.map((card) => ({
+        word: card.word,
+        revealed: card.revealed,
+        color: "color" in card ? card.color : null,
+      })),
+      currentTeam: state.currentTeam,
+      phase: state.phase,
+      activeSeat: `${state.currentTeam}-${activeRole}` as CodenamesSeat,
+      remaining: state.remaining,
+      isGameOver: state.isGameOver,
+      winner: state.winner,
+      keyVisible: visibleRole === "spymaster",
+    };
   }
 
   get activeSeat(): CodenamesSeat {
-    throw new NotImplementedError("Codenames active-seat calculation");
+    const role = this.game.phase === "clue" ? "spymaster" : "operative";
+    return `${this.game.currentTeam}-${role}` as CodenamesSeat;
   }
 
   get isGameOver(): boolean {
-    throw new NotImplementedError("Codenames completion rules");
+    return this.game.isGameOver;
+  }
+
+  get winner(): CodenamesTeam | null {
+    return this.game.winner;
+  }
+
+  get endReason(): "all-cards" | "assassin" | null {
+    return this.game.endReason;
   }
 
   serialize(): CodenamesState {
-    return {
-      words: [...this.state.words],
-      key: [...this.state.key],
-      startingTeam: this.state.startingTeam,
-      moves: [...this.state.moves],
-    };
+    const { words, key, startingTeam, moves } = this.game.getState();
+    return { words, key, startingTeam, moves };
   }
 }

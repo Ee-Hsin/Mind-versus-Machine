@@ -1,35 +1,50 @@
-import { NotImplementedError } from "@ai-ramp/engine";
 import type { WordlePublicState } from "@ai-ramp/protocol";
+import { Wordle } from "../../../../game_models/wordle/wordle";
 
 export interface WordleState {
   answer: string;
   guesses: string[];
 }
 
-/** Pure Wordle rules belong here; orchestration and model calls do not. */
+/** Package-local façade over the pure Wordle rules. */
 export class WordleModel {
-  static readonly WORD_LENGTH = 5;
-  static readonly MAX_TRIES = 6;
+  static readonly WORD_LENGTH = Wordle.WORD_LENGTH;
+  static readonly MAX_TRIES = Wordle.MAX_TRIES;
+  private readonly game: Wordle;
 
-  constructor(readonly state: WordleState) {}
+  constructor(state?: WordleState) {
+    this.game = state ? Wordle.fromState(state) : new Wordle();
+  }
 
-  guessWord(_guess: string): boolean {
-    throw new NotImplementedError("Wordle guess validation and scoring");
+  guessWord(guess: string): boolean {
+    return this.game.guessWord(guess);
   }
 
   formattedState(): string {
-    throw new NotImplementedError("Wordle formatted model view");
+    return this.game.formattedState();
   }
 
-  publicState(_revealAnswer = false): WordlePublicState {
-    throw new NotImplementedError("Wordle public-state projection");
+  publicState(revealAnswer = false): WordlePublicState {
+    const state = this.game.getState();
+    return {
+      board: state.board.map((row) => ({
+        guess: row.guess,
+        states: row.states.map((value) => value.toLowerCase() as "green" | "yellow" | "gray"),
+      })),
+      guessesMade: state.guessesMade,
+      triesRemaining: state.triesRemaining,
+      isWon: state.isWon,
+      isGameOver: state.isGameOver,
+      ...(revealAnswer || state.isGameOver ? { answer: state.answer } : {}),
+    };
   }
 
   get isGameOver(): boolean {
-    throw new NotImplementedError("Wordle completion rules");
+    return this.game.isGameOver;
   }
 
   serialize(): WordleState {
-    return { answer: this.state.answer, guesses: [...this.state.guesses] };
+    const { answer, guesses } = this.game.getState();
+    return { answer, guesses };
   }
 }

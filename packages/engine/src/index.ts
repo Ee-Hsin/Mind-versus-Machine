@@ -48,6 +48,7 @@ export interface MatchContext<G extends GameType> {
   matchNumber: number;
   config: RunConfig<G>;
   events: ArenaEventSink;
+  players: Record<string, ModelPlayer>;
   interactive?: InteractiveController;
   signal?: AbortSignal;
 }
@@ -103,4 +104,112 @@ export interface ArenaRepository {
   listRuns(limit?: number): Promise<RunSummary[]>;
   claimNextRun(workerId: string): Promise<RunSummary | null>;
   requestCancellation(runId: string): Promise<void>;
+  finishRun(runId: string, result: unknown): Promise<void>;
+  failRun(runId: string, error: string): Promise<void>;
+}
+
+export interface TurnTelemetry {
+  turnNumber: number;
+  playerId: string;
+  player: string;
+  prompt: string;
+  rawOutput: unknown;
+  action: unknown;
+  accepted: boolean;
+  attempt: number;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+
+export interface GameObserver {
+  onTurn?(turn: TurnTelemetry): Promise<void>;
+}
+
+export interface AdapterRunResult {
+  abandoned: boolean;
+  result: GameResult;
+  finalState: unknown;
+  turns: TurnTelemetry[];
+  inputTokens: number;
+  outputTokens: number;
+}
+
+/** Execute any adapter without knowing its game's rules. */
+export async function runAdapter<G extends GameType>(
+  adapter: GameAdapter<G>,
+  players: Record<string, ModelPlayer>,
+  options: { maxAttemptsPerTurn?: number; observer?: GameObserver; signal?: AbortSignal } = {},
+): Promise<AdapterRunResult> {
+  const maxAttempts = options.maxAttemptsPerTurn ?? 3;
+  const turns: TurnTelemetry[] = [];
+  let turnNumber = 0;
+  let abandoned = false;
+  let inputTokens = 0;
+  let outputTokens = 0;
+
+  outer: while (!adapter.isOver()) {
+    if (options.signal?.aborted) throw options.signal.reason ?? new Error("Run cancelled.");
+    for (const playerId of adapter.playersToAct()) {
+      const player = players[playerId];
+      if (!player) throw new Error(`No player registered for seat ${playerId}.`);
+      turnNumber++;
+      let rejection: string | undefined;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const prompt = adapter.viewFor(playerId) +
+          (rejection ? `\n\nYour previous action was invalid: ${rejection}` : "");
+        const outcome = await player.act(
+          adapter.systemPromptFor(playerId), prompt, adapter.actionSchema,
+          { signal: options.signal },
+        );
+        const parsed = adapter.actionSchema.safeParse(outcome.action);
+        const applied = parsed.success
+          ? adapter.applyAction(playerId, parsed.data)
+          : { accepted: false, message: "Output did not match the action schema." };
+        const turn: TurnTelemetry = {
+          turnNumber, playerId, player: player.id, prompt,
+          rawOutput: outcome.action, action: parsed.success ? parsed.data : null,
+          accepted: applied.accepted, attempt, latencyMs: outcome.latencyMs,
+          inputTokens: outcome.inputTokens ?? 0, outputTokens: outcome.outputTokens ?? 0,
+        };
+        inputTokens += turn.inputTokens;
+        outputTokens += turn.outputTokens;
+        turns.push(turn);
+        await options.observer?.onTurn?.(turn);
+        if (applied.accepted) break;
+        rejection = applied.message ?? "Invalid action.";
+        if (attempt === maxAttempts) {
+          abandoned = true;
+          break outer;
+        }
+      }
+    }
+  }
+  return {
+    abandoned,
+    result: abandoned ? { scores: {}, summary: `Abandoned after ${maxAttempts} invalid attempts.` } : adapter.result(),
+    finalState: adapter.serialize(), turns, inputTokens, outputTokens,
+  };
+}
+
+export async function runPool<T>(tasks: (() => Promise<T>)[], concurrency: number) {
+  if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("Concurrency must be a positive integer.");
+  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
+  let next = 0;
+  async function worker() {
+    while (next < tasks.length) {
+      const index = next++;
+      try { results[index] = { status: "fulfilled", value: await tasks[index]() }; }
+      catch (reason) { results[index] = { status: "rejected", reason }; }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
+  return results;
+}
+
+export const INITIAL_ELO = 1200;
+export function updateElo(ratingA: number, ratingB: number, scoreA: number) {
+  const expectedA = 1 / (1 + 10 ** ((ratingB - ratingA) / 400));
+  const delta = 32 * (scoreA - expectedA);
+  return { ratingA: ratingA + delta, ratingB: ratingB - delta };
 }
