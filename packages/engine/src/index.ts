@@ -157,10 +157,33 @@ export async function runAdapter<G extends GameType>(
       for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         const prompt = adapter.viewFor(playerId) +
           (rejection ? `\n\nYour previous action was invalid: ${rejection}` : "");
-        const outcome = await player.act(
-          adapter.systemPromptFor(playerId), prompt, adapter.actionSchema,
-          { signal: options.signal },
-        );
+        let outcome: ModelActOutcome<GameAction<G>>;
+        try {
+          outcome = await player.act(
+            adapter.systemPromptFor(playerId), prompt, adapter.actionSchema,
+            { signal: options.signal },
+          );
+        } catch (error) {
+          if (options.signal?.aborted) throw error; // let cancellation propagate
+          // The model call threw (e.g. the model-runtime's structured-output
+          // retries were exhausted / NoObjectGeneratedError). Treat it like an
+          // invalid action: log it, re-prompt on the next attempt with the reason
+          // appended, and abandon after maxAttempts rather than crashing the match.
+          const message = error instanceof Error ? error.message.split("\n")[0] : String(error);
+          const failedTurn: TurnTelemetry = {
+            turnNumber, playerId, player: player.id, prompt,
+            rawOutput: null, action: null, accepted: false, attempt,
+            latencyMs: 0, inputTokens: 0, outputTokens: 0,
+          };
+          turns.push(failedTurn);
+          await options.observer?.onTurn?.(failedTurn);
+          rejection = `Model did not return a valid structured action (${message}).`;
+          if (attempt === maxAttempts) {
+            abandoned = true;
+            break outer;
+          }
+          continue;
+        }
         const parsed = adapter.actionSchema.safeParse(outcome.action);
         const applied = parsed.success
           ? adapter.applyAction(playerId, parsed.data)

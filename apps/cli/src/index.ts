@@ -12,6 +12,15 @@ function argument(name: string, fallback: string) {
   return index >= 0 && process.argv[index + 1] ? process.argv[index + 1] : fallback;
 }
 
+/** Human-friendly elapsed time, e.g. "27s", "1m 23s", "1h 2m 5s". */
+function formatDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  return [h ? `${h}h` : null, h || m ? `${m}m` : null, `${sec}s`].filter(Boolean).join(" ");
+}
+
 class RandomPlayer implements ModelPlayer {
   constructor(readonly id: string, private readonly game: "wordle" | "codenames") {}
   async act<Action>(_system: string, prompt: string, _schema: z.ZodType<Action>) {
@@ -37,8 +46,10 @@ class RandomPlayer implements ModelPlayer {
 
 const game = argument("game", "wordle");
 if (game !== "wordle" && game !== "codenames") throw new Error(`Unknown game: ${game}`);
-const modelIds = argument("models", "random-a,random-b").split(",");
-if (modelIds.length !== 2) throw new Error("Expected exactly two comma-separated models.");
+const modelIds = argument("models", "random-a,random-b").split(",").map((id) => id.trim()).filter(Boolean);
+// Codenames is a two-team head-to-head; Wordle is an N-way heat (all models race the same word).
+if (game === "codenames" && modelIds.length !== 2) throw new Error("Codenames needs exactly two models: --models <a>,<b>");
+if (game === "wordle" && modelIds.length < 2) throw new Error("Wordle needs at least two models: --models <a>,<b>[,<c>,...]");
 const matches = Number(argument("n", "3"));
 const concurrency = Number(argument("concurrency", "2"));
 const player = (id: string): ModelPlayer => id.startsWith("random") ? new RandomPlayer(id, game) : new AiSdkModelPlayer(id);
@@ -62,17 +73,38 @@ const events = {
   },
 };
 
-const tasks = Array.from({ length: matches }, (_, index) => async () => {
+/** Per-actor metric fields we read here (superset-safe across both games). */
+interface ActorMetric {
+  actorId: string;
+  score: number;
+  won: boolean;
+  guesses?: number;
+  team?: string;
+  latencyMs: number;
+  inputTokens: number;
+  outputTokens: number;
+}
+interface MatchResult {
+  metrics: ActorMetric[];
+  input: number;
+  output: number;
+  ms: number;
+}
+
+const tasks = Array.from({ length: matches }, (_, index) => async (): Promise<MatchResult> => {
   const runId = persistedRun?.id ?? randomUUID();
+  const startedMatch = Date.now();
   if (game === "wordle") {
     const result = await wordleModule.definition.runMatch({
       runId, matchNumber: index + 1, config: config as RunConfig<"wordle">, events,
       players: Object.fromEntries(modelIds.map((id) => [id, player(id)])),
     });
-    const [a, b] = result.metrics;
-    return { outcome: a.score > b.score ? 1 : a.score < b.score ? 0 : 0.5,
+    return {
+      metrics: result.metrics,
       input: result.metrics.reduce((sum, value) => sum + value.inputTokens, 0),
-      output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0), metrics: result.metrics };
+      output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0),
+      ms: Date.now() - startedMatch,
+    };
   }
   const red = player(modelIds[0]);
   const blue = player(modelIds[1]);
@@ -80,39 +112,119 @@ const tasks = Array.from({ length: matches }, (_, index) => async () => {
     runId, matchNumber: index + 1, config: config as RunConfig<"codenames">, events,
     players: { "red-spymaster": red, "red-operative": red, "blue-spymaster": blue, "blue-operative": blue },
   });
-  return { outcome: result.metrics.find((value) => value.team === "red")?.won ? 1 : 0,
+  return {
+    metrics: result.metrics,
     input: result.metrics.reduce((sum, value) => sum + value.inputTokens, 0),
-    output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0), metrics: result.metrics };
+    output: result.metrics.reduce((sum, value) => sum + value.outputTokens, 0),
+    ms: Date.now() - startedMatch,
+  };
 });
 
+const startedAt = Date.now();
 const settled = await runPool(tasks, concurrency);
 const results = settled.flatMap((item) => {
   if (item.status === "fulfilled") return [item.value];
   console.error("Match failed:", item.reason instanceof Error ? item.reason.message : String(item.reason));
   return [];
 });
-const wins = results.filter(({ outcome }) => outcome === 1).length;
-const losses = results.filter(({ outcome }) => outcome === 0).length;
+const failures = settled.filter((item) => item.status === "rejected");
+
+// --- Persist run + ratings ------------------------------------------------
 if (repository && persistedRun) {
-  const failures = settled.filter((item) => item.status === "rejected");
   if (failures.length) await repository.failRun(persistedRun.id, `${failures.length} match(es) failed.`);
   else await repository.finishRun(persistedRun.id, { results: results.map(({ metrics }) => metrics) });
-  if (!failures.length && modelIds[0] !== modelIds[1] && results.length) {
-    const [storedA, storedB] = await Promise.all([
-      repository.loadRating(modelIds[0], game), repository.loadRating(modelIds[1], game),
-    ]);
-    let ratingA = storedA?.elo ?? INITIAL_ELO;
-    let ratingB = storedB?.elo ?? INITIAL_ELO;
-    for (const result of results) ({ ratingA, ratingB } = updateElo(ratingA, ratingB, result.outcome));
-    await Promise.all([
-      repository.saveRating({ model: modelIds[0], gameType: game, elo: ratingA,
-        gamesPlayed: (storedA?.gamesPlayed ?? 0) + results.length }),
-      repository.saveRating({ model: modelIds[1], gameType: game, elo: ratingB,
-        gamesPlayed: (storedB?.gamesPlayed ?? 0) + results.length }),
-    ]);
+
+  if (!failures.length && results.length) {
+    if (game === "wordle") {
+      // Round-robin Elo: within each match every pair of models is scored head-to-head.
+      const models = [...new Set(results.flatMap((r) => r.metrics.map((m) => m.actorId)))];
+      if (models.length >= 2) {
+        const stored = new Map(
+          await Promise.all(models.map(async (m) => [m, await repository.loadRating(m, game)] as const)),
+        );
+        const elo = new Map(models.map((m) => [m, stored.get(m)?.elo ?? INITIAL_ELO]));
+        for (const r of results) {
+          for (let i = 0; i < r.metrics.length; i++) {
+            for (let j = i + 1; j < r.metrics.length; j++) {
+              const a = r.metrics[i];
+              const b = r.metrics[j];
+              const outcomeA = a.score > b.score ? 1 : a.score < b.score ? 0 : 0.5;
+              const updated = updateElo(elo.get(a.actorId) ?? INITIAL_ELO, elo.get(b.actorId) ?? INITIAL_ELO, outcomeA);
+              elo.set(a.actorId, updated.ratingA);
+              elo.set(b.actorId, updated.ratingB);
+            }
+          }
+        }
+        await Promise.all(models.map((m) => repository.saveRating({
+          model: m, gameType: game, elo: elo.get(m) ?? INITIAL_ELO,
+          gamesPlayed: (stored.get(m)?.gamesPlayed ?? 0) + results.length,
+        })));
+      }
+    } else if (modelIds[0] !== modelIds[1]) {
+      // Codenames: two-way Elo from each match's red-perspective outcome.
+      const [storedA, storedB] = await Promise.all([
+        repository.loadRating(modelIds[0], game), repository.loadRating(modelIds[1], game),
+      ]);
+      let ratingA = storedA?.elo ?? INITIAL_ELO;
+      let ratingB = storedB?.elo ?? INITIAL_ELO;
+      for (const r of results) {
+        const redWon = r.metrics.find((m) => m.team === "red")?.won ? 1 : 0;
+        ({ ratingA, ratingB } = updateElo(ratingA, ratingB, redWon));
+      }
+      await Promise.all([
+        repository.saveRating({ model: modelIds[0], gameType: game, elo: ratingA, gamesPlayed: (storedA?.gamesPlayed ?? 0) + results.length }),
+        repository.saveRating({ model: modelIds[1], gameType: game, elo: ratingB, gamesPlayed: (storedB?.gamesPlayed ?? 0) + results.length }),
+      ]);
+    }
   }
   console.log(`Supabase run: ${persistedRun.id}`);
   if (failures.length) process.exitCode = 1;
 }
-console.log(`[${game}] ${modelIds[0]} vs ${modelIds[1]}: ${wins}W / ${results.length - wins - losses}D / ${losses}L`);
+
+// --- Results output -------------------------------------------------------
+if (game === "wordle") {
+  // Aggregate per model across all matches (each model played every word once).
+  const agg = new Map<string, { matches: number; solves: number; guessesOnSolves: number; latencyMs: number; input: number; output: number }>();
+  for (const r of results) {
+    for (const m of r.metrics) {
+      const a = agg.get(m.actorId) ?? { matches: 0, solves: 0, guessesOnSolves: 0, latencyMs: 0, input: 0, output: 0 };
+      a.matches++;
+      if (m.won) {
+        a.solves++;
+        a.guessesOnSolves += m.guesses ?? 0;
+      }
+      a.latencyMs += m.latencyMs;
+      a.input += m.inputTokens;
+      a.output += m.outputTokens;
+      agg.set(m.actorId, a);
+    }
+  }
+  const board = [...agg.entries()]
+    .map(([model, a]) => ({
+      model, ...a,
+      solveRate: a.matches ? a.solves / a.matches : 0,
+      avgGuesses: a.solves ? a.guessesOnSolves / a.solves : Infinity,
+    }))
+    .sort((x, y) => y.solveRate - x.solveRate || x.avgGuesses - y.avgGuesses || x.latencyMs - y.latencyMs);
+  console.log(`\n[wordle] leaderboard — ${results.length} match(es), ${modelIds.length} models racing the same word each:`);
+  const width = Math.max(5, ...board.map((row) => row.model.length));
+  board.forEach((row, i) => {
+    console.log(
+      `  ${String(i + 1).padStart(2)}. ${row.model.padEnd(width)}  ` +
+        `solved ${row.solves}/${row.matches}  ` +
+        `avg ${row.solves ? row.avgGuesses.toFixed(1) : "—"} guesses  ` +
+        `think ${formatDuration(row.latencyMs)}  ` +
+        `tok ${row.input}/${row.output}`,
+    );
+  });
+} else {
+  const wins = results.filter((r) => r.metrics.find((m) => m.team === "red")?.won).length;
+  console.log(`[codenames] ${modelIds[0]} (red) vs ${modelIds[1]} (blue): ${wins}W / ${results.length - wins}L`);
+}
+
 console.log(`Tokens: ${results.reduce((n, value) => n + value.input, 0)} in / ${results.reduce((n, value) => n + value.output, 0)} out`);
+const avgMatchMs = results.length ? Math.round(results.reduce((n, value) => n + value.ms, 0) / results.length) : 0;
+console.log(
+  `Total run time: ${formatDuration(Date.now() - startedAt)}` +
+    (results.length ? ` (${results.length} match(es), avg ${formatDuration(avgMatchMs)}/match, concurrency ${concurrency})` : ""),
+);
