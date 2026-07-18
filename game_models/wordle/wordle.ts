@@ -1,24 +1,52 @@
 // A text-based model of the game Wordle, designed to be driven programmatically
-// (e.g. by an LLM). The game exposes a small API to submit guesses and to read
-// the current board back as plain text.
+// (e.g. by an LLM). Adapted to the ai-ramp-games engine/protocol API: the model
+// is a pure function of explicit state ({ answer, guesses }), exposes a public
+// projection (`publicState`) whose letter states use protocol casing, and is
+// serializable via `serialize()`. Random seeding lives outside the model (in
+// match orchestration); `WordleModel.newRandom()` is a convenience for demos.
+//
+// The types below (`WordleState`, `WordlePublicState`, `WordleLetterState`,
+// `WordleGuessRow`) mirror `@ai-ramp/protocol`; when this file moves into
+// `packages/games/wordle/src/model.ts`, swap them for imports from that package.
 //
 // Note: the word lists are imported from the generated ./wordleWords module.
-// The import is extensionless for portability across module systems; under
-// strict NodeNext ESM resolution you may need to change it to "./wordleWords.js".
 import { ANSWER_WORDS, ALLOWED_GUESSES } from "./wordleWords";
 
-/** The three ways a letter in a guess can be scored against the answer. */
-export type LetterState = "Green" | "Yellow" | "Gray";
+/** The three ways a letter in a guess can be scored (protocol casing). */
+export type WordleLetterState = "green" | "yellow" | "gray";
 
 /** A single scored guess: the word plus a per-letter colour (both length 5). */
-export interface GuessRow {
+export interface WordleGuessRow {
   readonly guess: string;
-  readonly states: readonly LetterState[];
+  readonly states: readonly WordleLetterState[];
+}
+
+/**
+ * Canonical, serializable state: `answer` + `guesses` are all you need to fully
+ * reconstruct a game (via the constructor or {@link WordleModel.fromState}).
+ * NOTE: `answer` is the secret word — keep it server-side.
+ */
+export interface WordleState {
+  answer: string;
+  guesses: string[];
+}
+
+/**
+ * The role-safe public projection (mirrors the engine's `WordlePublicState`).
+ * The secret `answer` is present only when explicitly revealed by the caller.
+ */
+export interface WordlePublicState {
+  board: WordleGuessRow[];
+  guessesMade: number;
+  triesRemaining: number;
+  isWon: boolean;
+  isGameOver: boolean;
+  answer?: string;
 }
 
 /**
  * The 26 letters bucketed by their best-known status — a Wordle keyboard. Every
- * letter is in exactly one group (precedence Green > Yellow > Gray; letters not
+ * letter is in exactly one group (precedence green > yellow > gray; letters not
  * yet guessed are `unused`), and each group is alphabetical.
  */
 export interface LetterGroups {
@@ -33,20 +61,14 @@ export interface LetterGroups {
 }
 
 /**
- * A structured, serializable snapshot of a game — the non-text representation.
- *
- * `answer` + `guesses` are canonical: they are all you need to persist and fully
- * reconstruct a game (via {@link Wordle.fromState}). The remaining fields are
- * *derived* from those two and included so the snapshot can be returned directly
- * from an API without recomputing anything.
- *
- * NOTE: `answer` is the secret word. Keep it server-side; strip it before
- * returning the snapshot to a live player (or send `board` + the flags instead).
+ * A richer structured snapshot (a superset of {@link WordleState}) for local /
+ * demo use. The canonical `answer` + `guesses` reconstruct a game; the rest is
+ * derived and included so a snapshot can be rendered without recomputation.
  */
 export interface GameState {
   answer: string;
   guesses: string[];
-  board: GuessRow[];
+  board: WordleGuessRow[];
   /** Keyboard state after each turn (index i = after guess i+1) — drives a replay. */
   keyboardByTurn: LetterGroups[];
   guessesMade: number;
@@ -65,48 +87,43 @@ const MAX_TRIES = 6;
 // The source lists are already uppercase (guaranteed by the generator).
 const VALID_GUESSES = new Set<string>([...ANSWER_WORDS, ...ALLOWED_GUESSES]);
 
-export class Wordle {
+export class WordleModel {
   static readonly MAX_TRIES = MAX_TRIES;
   static readonly WORD_LENGTH = WORD_LENGTH;
 
   private answer: string;
-  private rows: GuessRow[] = [];
+  private rows: WordleGuessRow[] = [];
 
   /**
-   * @param answer optional fixed secret word for deterministic tests / seeded
-   *   play. When omitted, a random word is chosen from the answer list.
+   * Build a game from canonical {@link WordleState}. `answer` is the secret;
+   * `guesses` are replayed and re-scored (they are trusted, not re-validated),
+   * so a game reconstructs even if the word lists changed since it was saved.
    */
-  constructor(answer?: string) {
-    this.answer = answer !== undefined ? normalize(answer) : randomAnswer();
-  }
-
-  /**
-   * Rebuild a game from a persisted snapshot (e.g. a DB row). Only `answer` and
-   * `guesses` are read; the colours are re-scored from them, so this works even
-   * if the word lists were regenerated since the game was saved (the stored
-   * guesses are trusted and not re-validated).
-   */
-  static fromState(state: { answer: string; guesses: readonly string[] }): Wordle {
-    const game = new Wordle(state.answer);
+  constructor(state: WordleState) {
+    this.answer = normalize(state.answer);
     for (const guess of state.guesses) {
       const normalized = normalize(guess);
-      game.rows.push({ guess: normalized, states: score(normalized, game.answer) });
+      this.rows.push({ guess: normalized, states: score(normalized, this.answer) });
     }
-    return game;
+  }
+
+  /** Convenience alias for the state constructor (round-trips {@link serialize}). */
+  static fromState(state: WordleState): WordleModel {
+    return new WordleModel(state);
+  }
+
+  /** Convenience for demos/tests: a fresh game on a random secret answer. */
+  static newRandom(): WordleModel {
+    return new WordleModel({ answer: randomAnswer(), guesses: [] });
   }
 
   // --- Player-facing API ---------------------------------------------------
 
   /**
-   * Submit a guess.
-   *
-   * Returns `true` if the guess was accepted and scored (it counts as one of
-   * the six tries), or `false` if it was rejected. A guess is rejected — and
-   * does NOT consume a try — when the game is already over, the guess is not
-   * exactly five letters, it contains non-letters, or it is not a recognised
-   * word. Input is case-insensitive.
-   *
-   * Winning is reported separately via {@link isWon}.
+   * Submit a guess. Returns `true` if accepted and scored (uses one of the six
+   * tries), or `false` if rejected (game over, not exactly five letters,
+   * non-letters, or not a recognised word). Case-insensitive. Winning is
+   * reported separately via {@link isWon}.
    */
   guessWord(guess: string): boolean {
     if (this.isGameOver) return false;
@@ -117,12 +134,6 @@ export class Wordle {
 
     this.rows.push({ guess: normalized, states: score(normalized, this.answer) });
     return true;
-  }
-
-  /** Start a new game with a fresh random answer. */
-  restartGame(): void {
-    this.rows = [];
-    this.answer = randomAnswer();
   }
 
   // --- Formatted (string) views: print these or hand them to an LLM. Each has
@@ -159,7 +170,7 @@ export class Wordle {
   /**
    * The whole game as one formatted string — a status line, the board, and
    * (while the game is live) the keyboard. Handy to print or pass to an LLM in a
-   * single call. Structured counterpart: {@link getState}.
+   * single call. Structured counterpart: {@link publicState} / {@link getState}.
    */
   formattedState(): string {
     const parts = [this.statusLine(), "", this.formattedBoard];
@@ -181,23 +192,22 @@ export class Wordle {
   // --- Structured (object) views: use these for the DB / programmatic access.
 
   /**
-   * The structured (non-text) form of {@link formattedBoard}: every guess so far
-   * with its per-letter colours. Returns copies, so mutating the result is safe.
+   * The structured form of {@link formattedBoard}: every guess so far with its
+   * per-letter colours. Returns copies, so mutating the result is safe.
    */
-  get board(): GuessRow[] {
+  get board(): WordleGuessRow[] {
     return this.rows.map((row) => ({ guess: row.guess, states: [...row.states] }));
   }
 
   /** The most recent scored guess with its colours, or `null` if none yet. */
-  get lastGuess(): GuessRow | null {
+  get lastGuess(): WordleGuessRow | null {
     const last = this.rows[this.rows.length - 1];
     return last ? { guess: last.guess, states: [...last.states] } : null;
   }
 
   /**
    * The current keyboard: the alphabet bucketed by best-known status. Equal to
-   * the last entry of {@link GameState.keyboardByTurn}. See {@link letterGroupsFrom}
-   * for how statuses are resolved.
+   * the last entry of {@link GameState.keyboardByTurn}.
    */
   get letters(): LetterGroups {
     return letterGroupsFrom(this.rows);
@@ -240,9 +250,28 @@ export class Wordle {
   }
 
   /**
-   * A full structured snapshot of the game — persist it to a DB row and/or
-   * return it via an API after each turn. Round-trips through {@link fromState}.
-   * (`JSON.stringify(game)` yields the same object, since this backs `toJSON`.)
+   * The role-safe public projection handed to clients / the engine. `answer` is
+   * included only when `revealAnswer` is true (e.g. postgame / operator views).
+   */
+  publicState(revealAnswer = false): WordlePublicState {
+    return {
+      board: this.board,
+      guessesMade: this.guessesMade,
+      triesRemaining: this.triesRemaining,
+      isWon: this.isWon,
+      isGameOver: this.isGameOver,
+      ...(revealAnswer ? { answer: this.answer } : {}),
+    };
+  }
+
+  /** Canonical serializable state — round-trips through the constructor. */
+  serialize(): WordleState {
+    return { answer: this.answer, guesses: this.rows.map((row) => row.guess) };
+  }
+
+  /**
+   * A full structured snapshot (superset of {@link serialize}) for local / demo
+   * use. (`JSON.stringify(game)` yields the same object, since this backs `toJSON`.)
    */
   getState(): GameState {
     return {
@@ -275,17 +304,17 @@ function randomAnswer(): string {
   return ANSWER_WORDS[Math.floor(Math.random() * ANSWER_WORDS.length)];
 }
 
-const RANK: Record<LetterState, number> = { Gray: 0, Yellow: 1, Green: 2 };
+const RANK: Record<WordleLetterState, number> = { gray: 0, yellow: 1, green: 2 };
 
 /**
  * Bucket the alphabet by best-known status across the given rows. A letter's
- * status is the best it has ever achieved (Green > Yellow > Gray), so a letter
- * that is Gray in one spot but confirmed elsewhere (duplicates) lands in
+ * status is the best it has ever achieved (green > yellow > gray), so a letter
+ * that is gray in one spot but confirmed elsewhere (duplicates) lands in
  * green/yellow, not gray. Letters never guessed are `unused`. Groups are
  * alphabetical, and together they partition all 26 letters.
  */
-function letterGroupsFrom(rows: readonly GuessRow[]): LetterGroups {
-  const best: Record<string, LetterState> = {};
+function letterGroupsFrom(rows: readonly WordleGuessRow[]): LetterGroups {
+  const best: Record<string, WordleLetterState> = {};
   for (const row of rows) {
     for (let i = 0; i < row.guess.length; i++) {
       const letter = row.guess[i];
@@ -300,8 +329,8 @@ function letterGroupsFrom(rows: readonly GuessRow[]): LetterGroups {
   for (const letter of "ABCDEFGHIJKLMNOPQRSTUVWXYZ") {
     const state = best[letter];
     if (state === undefined) groups.unused.push(letter);
-    else if (state === "Green") groups.green.push(letter);
-    else if (state === "Yellow") groups.yellow.push(letter);
+    else if (state === "green") groups.green.push(letter);
+    else if (state === "yellow") groups.yellow.push(letter);
     else groups.gray.push(letter);
   }
   return groups;
@@ -313,14 +342,14 @@ function letterGroupsFrom(rows: readonly GuessRow[]): LetterGroups {
  * remaining letter is marked yellow only while unmatched occurrences of it
  * remain in the answer.
  */
-function score(guess: string, answer: string): LetterState[] {
-  const states: LetterState[] = new Array(WORD_LENGTH).fill("Gray");
+function score(guess: string, answer: string): WordleLetterState[] {
+  const states: WordleLetterState[] = new Array(WORD_LENGTH).fill("gray");
   const remaining: Record<string, number> = {};
 
   // Pass 1: greens, and tally the answer letters not yet matched.
   for (let i = 0; i < WORD_LENGTH; i++) {
     if (guess[i] === answer[i]) {
-      states[i] = "Green";
+      states[i] = "green";
     } else {
       remaining[answer[i]] = (remaining[answer[i]] ?? 0) + 1;
     }
@@ -328,10 +357,10 @@ function score(guess: string, answer: string): LetterState[] {
 
   // Pass 2: yellows for letters still available in the tally, else gray.
   for (let i = 0; i < WORD_LENGTH; i++) {
-    if (states[i] === "Green") continue;
+    if (states[i] === "green") continue;
     const letter = guess[i];
     if ((remaining[letter] ?? 0) > 0) {
-      states[i] = "Yellow";
+      states[i] = "yellow";
       remaining[letter]--;
     }
   }
@@ -339,7 +368,7 @@ function score(guess: string, answer: string): LetterState[] {
   return states;
 }
 
-// Cells are padded to fit the widest content ("Yellow" = 6 chars); the row
+// Cells are padded to fit the widest content ("yellow" = 6 chars); the row
 // label column is padded to a fixed width so both rows of a turn line up.
 const CELL_WIDTH = 6;
 const LABEL_WIDTH = 8;

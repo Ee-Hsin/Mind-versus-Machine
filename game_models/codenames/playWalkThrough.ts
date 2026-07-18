@@ -1,4 +1,4 @@
-// Example: a scripted walkthrough of a Codenames game using the Codenames class.
+// Example: a scripted walkthrough of a Codenames game using the CodenamesModel class.
 //
 // Run it with:
 //   npx tsx playWalkThrough.ts
@@ -9,7 +9,7 @@
 // goes through the public API. For an interactive game you drive yourself, see
 // play.ts.
 
-import { Codenames, type CardColor, type GuessResult } from "./codenames";
+import { CodenamesModel, type CardColor, type GuessResult } from "./codenames";
 
 // A fixed board so the walkthrough is reproducible: indices 0-8 red, 9-16 blue,
 // 17-23 neutral, 24 assassin. Red goes first.
@@ -23,7 +23,7 @@ const KEY: CardColor[] = [
   ...Array(9).fill("red"), ...Array(8).fill("blue"), ...Array(7).fill("neutral"), "assassin",
 ] as CardColor[];
 
-const game = new Codenames({ words: WORDS, key: KEY, startingTeam: "red" });
+const game = new CodenamesModel({ words: WORDS, key: KEY, startingTeam: "red", moves: [] });
 
 function section(title: string): void {
   console.log("\n" + "=".repeat(60) + "\n" + title + "\n" + "=".repeat(60));
@@ -88,5 +88,5 @@ After every action you would:
   • save the full snapshot to the DB:      game.getState()          (has the key)
   • push a role-safe view to each client:  game.getPlayerState("operative")  // colours masked
                                             game.getPlayerState("spymaster")  // full colours
-  • rebuild a stored game for replay:       Codenames.fromState(row)
+  • rebuild a stored game for replay:       CodenamesModel.fromState(row)
 `);

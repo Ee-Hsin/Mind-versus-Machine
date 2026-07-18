@@ -1,0 +1,79 @@
+# Imposter word list: one "WORD | hint" pair per line.
+# The Crew see WORD exactly; the Imposter sees only the (deliberately vague) hint.
+# Lines starting with # and blank lines are ignored.
+
+BEACH | somewhere warm
+OCEAN | very big
+MOUNTAIN | outdoors
+DESERT | dry
+FOREST | full of trees
+RIVER | it flows
+VOLCANO | hot
+ISLAND | surrounded
+GLACIER | cold
+WATERFALL | falls down
+
+GUITAR | makes sound
+PIANO | has keys
+VIOLIN | classical
+DRUM | you hit it
+TRUMPET | brass
+
+PIZZA | a meal
+BURGER | fast food
+SUSHI | from Japan
+CHOCOLATE | sweet
+COFFEE | a drink
+PANCAKE | breakfast
+POPCORN | at the movies
+LEMON | sour
+HONEY | made by bugs
+
+DOCTOR | a profession
+TEACHER | works with people
+PILOT | travels a lot
+CHEF | works with heat
+FARMER | works outdoors
+ASTRONAUT | far away
+DETECTIVE | asks questions
+LAWYER | argues
+
+ELEPHANT | large animal
+PENGUIN | lives in the cold
+DOLPHIN | in the water
+SPIDER | many legs
+EAGLE | up high
+BUTTERFLY | changes
+KANGAROO | jumps
+OCTOPUS | lots of arms
+
+ROCKET | goes up
+BICYCLE | has wheels
+SUBMARINE | goes under
+HELICOPTER | flies
+TRAIN | on tracks
+
+CASTLE | very old
+LIBRARY | quiet place
+HOSPITAL | people go there
+STADIUM | crowds gather
+BRIDGE | connects
+LIGHTHOUSE | by the water
+
+UMBRELLA | for bad weather
+CANDLE | gives light
+MIRROR | you look into it
+CLOCK | tells you something
+TELESCOPE | for looking far
+BACKPACK | you carry it
+
+RAINBOW | many colors
+THUNDER | loud
+SNOWFLAKE | winter
+TORNADO | spins
+
+VAMPIRE | comes out at night
+WIZARD | uses magic
+ROBOT | not alive
+DRAGON | breathes fire
+GHOST | scary

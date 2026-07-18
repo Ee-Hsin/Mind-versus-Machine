@@ -1,6 +1,6 @@
 # Game Models
 
-Text-friendly, serializable models of two games — **Wordle** and **Codenames** — built to be driven programmatically (e.g. by LLMs). Each model maintains hidden state, enforces the rules/turn flow, and renders both plain-text views (to hand to a model or print) and structured objects (for a DB or programmatic use). Every game is serializable so it can be persisted, replayed, or spectated.
+Text-friendly, serializable models of three games — **Wordle**, **Codenames**, and **Imposter** — built to be driven programmatically (e.g. by LLMs). Each model maintains hidden state, enforces the rules/turn flow, and renders both plain-text views (to hand to a model or print) and structured objects (for a DB or programmatic use). Every game is serializable so it can be persisted, replayed, or spectated.
 
 Each game lives in its own self-contained folder; all imports are relative within the folder, so a folder can be copied or run on its own.
 
@@ -15,6 +15,15 @@ game_models/
 │   └── scripts/
 │       ├── codenames_words.txt   Source word list (editable)
 │       └── generate-words.mjs    Regenerates codenamesWords.ts
+├── imposter/
+│   ├── imposter.ts          Core game model (the Imposter class)
+│   ├── imposterWords.ts     Word/hint pool  ⚠ AUTO-GENERATED
+│   ├── play.ts              Interactive terminal game
+│   ├── playWalkThrough.ts   Scripted, non-interactive walkthrough
+│   ├── API.md               API reference
+│   └── scripts/
+│       ├── imposter_words.txt   Source "WORD | hint" list (editable)
+│       └── generate-words.mjs   Regenerates imposterWords.ts
 └── wordle/
     ├── wordle.ts              Core game model (the Wordle class)
     ├── wordleWords.ts         Word lists  ⚠ AUTO-GENERATED
@@ -42,6 +51,20 @@ game_models/
 
 ---
 
+## Imposter (`imposter/`)
+
+| File | Purpose |
+|------|---------|
+| **`imposter.ts`** | The core game model — the `Imposter` class. 6 players (5 Crew + 1 Imposter): the Crew share a secret word, the Imposter gets only a vague hint and must bluff. Enforces the clue → accuse → defense → rebuttal → final-vote → steal phase machine (with tie re-votes), renders **role-safe views** (Crew see the word but not who the imposter is; the Imposter sees only its hint) as formatted text and structured objects, and keeps an attributed log. Serializable via `getState()` / `fromState()` / `toJSON()`. This is the file you import to embed a game. |
+| **`imposterWords.ts`** | ⚠ **Auto-generated — do not edit by hand.** Exports `WORD_HINTS`, the word/hint pool (66 pairs); each game draws one at random. Regenerate with the script below. |
+| **`play.ts`** | Example: play Imposter interactively in the terminal as a "hotseat" game, driving all six seats yourself. Run with `npx tsx play.ts`. |
+| **`playWalkThrough.ts`** | Example: a scripted, non-interactive walkthrough of a full **seeded** game. Prints what each role sees, the clue round, the accusation/defense/rebuttal drama, the final vote, and the steal — and doubles as a usage reference. Run with `npx tsx playWalkThrough.ts`. |
+| **`API.md`** | Human-readable API reference for the `Imposter` class. |
+| **`scripts/imposter_words.txt`** | The editable source, one `WORD \| hint` pair per line. Edit this, then regenerate. |
+| **`scripts/generate-words.mjs`** | Reads `imposter_words.txt`, normalizes/validates it (uppercase word, trimmed hint, dedupe, check the `WORD \| hint` shape), and writes `imposterWords.ts`. Run with `node generate-words.mjs` from the `scripts/` folder whenever you edit the list. |
+
+---
+
 ## Wordle (`wordle/`)
 
 | File | Purpose |
@@ -56,7 +79,7 @@ game_models/
 
 ---
 
-## Conventions shared by both models
+## Conventions shared by all models
 
 - **Paired views:** every formatted-string view has a structured-object counterpart, so the same state can be printed, handed to an LLM, or stored in a DB.
 - **Serializable:** `getState()` / `fromState()` (and `toJSON()`) let you persist, replay, or reconstruct a game from its moves.
