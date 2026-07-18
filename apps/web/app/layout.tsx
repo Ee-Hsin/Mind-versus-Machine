@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "AI Ramp Games",
+  title: "The Intangible Game",
   description: "Humans and AI models playing social and word games.",
 };
 

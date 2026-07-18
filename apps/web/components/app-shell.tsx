@@ -9,7 +9,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
         <div className="mx-auto flex h-16 w-full max-w-[96rem] items-center justify-between gap-6 px-4 sm:px-6">
           <Link className="flex items-center gap-2.5" href="/">
             <span className="font-heading text-sm font-semibold">
-              AI Ramp Games
+              The Intangible Game
             </span>
           </Link>
 
