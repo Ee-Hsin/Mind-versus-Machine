@@ -1,9 +1,11 @@
 import type { CodenamesSpec } from "./codenames";
+import type { ImposterSpec } from "./imposter";
 import type { WordleSpec } from "./wordle";
 
 export interface GameSpecMap {
   wordle: WordleSpec;
   codenames: CodenamesSpec;
+  imposter: ImposterSpec;
 }
 
 export type GameType = keyof GameSpecMap;
@@ -15,3 +17,4 @@ export type GameMetrics<G extends GameType> = GameSpecMap[G]["metrics"];
 export * from "./types";
 export * from "./wordle";
 export * from "./codenames";
+export * from "./imposter";
