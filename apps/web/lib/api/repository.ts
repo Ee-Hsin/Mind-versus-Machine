@@ -1,22 +1,28 @@
-import { createSupabaseRepository } from "@ai-ramp/storage";
-import { createHash, randomBytes } from "node:crypto";
+import { createSupabaseRepository, type ArenaRepository } from "@ai-ramp/storage";
 
-export function repository() {
-  return createSupabaseRepository();
-}
+/**
+ * One Supabase client per process. Pinned on `globalThis` because Next's dev
+ * server re-evaluates modules on hot reload, which would otherwise leak a new
+ * client (and its connection pool) on every edit.
+ */
+const globalForRepository = globalThis as typeof globalThis & {
+  __arenaRepository?: ArenaRepository;
+};
 
-export const PARTICIPANT_COOKIE = "arena_participant";
-export function newParticipantToken() { return randomBytes(32).toString("base64url"); }
-export function tokenHash(token: string) { return createHash("sha256").update(token).digest("hex"); }
-export function participantToken(request: Request) {
-  const cookie = request.headers.get("cookie") ?? "";
-  return cookie.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${PARTICIPANT_COOKIE}=`))?.split("=").slice(1).join("=");
-}
-export function participantCookie(token: string) {
-  return `${PARTICIPANT_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800`;
+export function repository(): ArenaRepository {
+  globalForRepository.__arenaRepository ??= createSupabaseRepository();
+  return globalForRepository.__arenaRepository;
 }
 
 export function apiError(error: unknown): Response {
   console.error(error);
   return Response.json({ error: "internal_error" }, { status: 500 });
+}
+
+export function badRequest(error: string, details?: unknown): Response {
+  return Response.json({ error, ...(details === undefined ? {} : { details }) }, { status: 400 });
+}
+
+export function notFound(): Response {
+  return Response.json({ error: "not_found" }, { status: 404 });
 }

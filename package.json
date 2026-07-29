@@ -11,10 +11,10 @@
   "scripts": {
     "dev": "npm run dev --workspace @ai-ramp/web",
     "dev:web": "npm run dev --workspace @ai-ramp/web",
-    "worker": "npm run start --workspace @ai-ramp/worker",
-    "cli": "npm run start --workspace @ai-ramp/cli --",
+    "start": "npm run start --workspace @ai-ramp/web",
     "build": "npm run build --workspace @ai-ramp/web",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "check": "jiti scripts/check-wordle-rules.ts"
   },
   "devDependencies": {
     "dotenv-cli": "^10.0.0"

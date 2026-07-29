@@ -1,24 +1,12 @@
-import type { ReplayRow } from "@ai-ramp/storage";
+import type { ActorKind } from "@ai-ramp/protocol";
+import type { WordleParticipantResult } from "@ai-ramp/storage";
 
-interface WordleMetric {
-  actorId: string;
-  won: boolean;
-  guesses: number;
-  latencyMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  invalidActions: number;
-}
-
-interface WordleGameReplay {
-  gameId: string;
-  finalState?: { guesses?: string[] };
-}
-
-interface WordleReplay {
-  games?: WordleGameReplay[];
-  metrics?: WordleMetric[];
-}
+/**
+ * Every anonymous player aggregates into one row. When auth lands, a signed-in
+ * player can additionally be broken out by joining `arena_players.user_id` — the
+ * grouping key below is the only thing that has to change.
+ */
+export const HUMAN_COHORT_ID = "humans";
 
 interface Price {
   input: number;
@@ -42,7 +30,8 @@ export function estimatedModelCost(modelId: string, inputTokens: number, outputT
 }
 
 interface Accumulator {
-  modelId: string;
+  actorId: string;
+  actorKind: ActorKind;
   games: number;
   wins: number;
   winningGuesses: number;
@@ -57,124 +46,134 @@ interface Accumulator {
 export interface WordleLeaderboardRow {
   rank: number;
   score: number;
-  modelId: string;
+  actorId: string;
+  actorKind: ActorKind;
   displayName: string;
   games: number;
   successRate: number;
   avgGuessesPerWin: number | null;
-  avgTimePerGuessMs: number;
+  avgTimePerGuessMs: number | null;
   costPerGame: number | null;
   starterWord: string | null;
   invalidWordRate: number;
   provisional: boolean;
 }
 
-export function buildWordleLeaderboard(rows: ReplayRow[]): WordleLeaderboardRow[] {
-  const models = new Map<string, Accumulator>();
+/**
+ * Ranks every model and the human cohort against each other.
+ *
+ * Input is one row per *settled* board — the `wordle_participant_results` view
+ * already drops forfeited and abandoned participants, and it drops them per
+ * participant rather than per game, so the model boards from a game a human quit
+ * still count here.
+ */
+export function buildWordleLeaderboard(results: WordleParticipantResult[]): WordleLeaderboardRow[] {
+  const cohorts = new Map<string, Accumulator>();
 
-  for (const row of rows) {
-    const replay = row.replay as WordleReplay | null;
-    if (!replay?.metrics) continue;
-    const games = new Map((replay.games ?? []).map((game) => [game.gameId, game]));
+  for (const result of results) {
+    const actorId = result.actorKind === "model" ? result.modelId : HUMAN_COHORT_ID;
+    if (!actorId) continue;
 
-    for (const metric of replay.metrics) {
-      if (!isModelMetric(metric)) continue;
-      const estimatedCost = estimatedModelCost(metric.actorId, metric.inputTokens, metric.outputTokens);
-      const current = models.get(metric.actorId) ?? {
-        modelId: metric.actorId,
-        games: 0,
-        wins: 0,
-        winningGuesses: 0,
-        guesses: 0,
-        invalidActions: 0,
-        latencyMs: 0,
-        cost: 0,
-        pricedGames: 0,
-        starters: new Map<string, number>(),
-      };
-      const starter = games.get(metric.actorId)?.finalState?.guesses?.[0]?.toUpperCase();
+    const current = cohorts.get(actorId) ?? {
+      actorId,
+      actorKind: result.actorKind,
+      games: 0,
+      wins: 0,
+      winningGuesses: 0,
+      guesses: 0,
+      invalidActions: 0,
+      latencyMs: 0,
+      cost: 0,
+      pricedGames: 0,
+      starters: new Map<string, number>(),
+    };
 
-      current.games += 1;
-      current.wins += metric.won ? 1 : 0;
-      current.winningGuesses += metric.won ? metric.guesses : 0;
-      current.guesses += metric.guesses;
-      current.invalidActions += metric.invalidActions;
-      current.latencyMs += metric.latencyMs;
-      if (estimatedCost !== null) {
-        current.cost += estimatedCost;
-        current.pricedGames += 1;
-      }
-      if (starter) current.starters.set(starter, (current.starters.get(starter) ?? 0) + 1);
-      models.set(metric.actorId, current);
+    current.games += 1;
+    current.wins += result.won ? 1 : 0;
+    current.winningGuesses += result.won ? result.guesses : 0;
+    current.guesses += result.guesses;
+    current.invalidActions += result.invalidActions;
+    current.latencyMs += result.latencyMs;
+
+    const estimatedCost = estimatedModelCost(actorId, result.inputTokens, result.outputTokens);
+    if (estimatedCost !== null) {
+      current.cost += estimatedCost;
+      current.pricedGames += 1;
     }
+    if (result.starterWord) {
+      const starter = result.starterWord.toUpperCase();
+      current.starters.set(starter, (current.starters.get(starter) ?? 0) + 1);
+    }
+    cohorts.set(actorId, current);
   }
 
-  const cohort = [...models.values()];
-  const totalGames = cohort.reduce((sum, model) => sum + model.games, 0);
+  const cohort = [...cohorts.values()];
+  const totalGames = cohort.reduce((sum, actor) => sum + actor.games, 0);
   const overallSuccessRate = totalGames
-    ? cohort.reduce((sum, model) => sum + model.wins, 0) / totalGames
+    ? cohort.reduce((sum, actor) => sum + actor.wins, 0) / totalGames
     : 0;
-  const speedScores = efficiencyPercentiles(cohort, (model) => {
-    const attempts = model.guesses + model.invalidActions;
-    return attempts ? model.latencyMs / attempts : Number.POSITIVE_INFINITY;
+
+  // Speed and cost are model-efficiency measures that do not translate to a
+  // person: human think time is not recorded (turn latency is stored as zero) and
+  // a human costs no tokens. Humans are left out of both percentile cohorts and
+  // pick up the neutral 0.5, so these two components neither reward nor penalise
+  // them — the ranking turns on solving ability instead.
+  const models = cohort.filter((actor) => actor.actorKind === "model");
+  const speedScores = efficiencyPercentiles(models, (actor) => {
+    const attempts = actor.guesses + actor.invalidActions;
+    return attempts ? actor.latencyMs / attempts : Number.POSITIVE_INFINITY;
   });
   const costScores = efficiencyPercentiles(
-    cohort.filter((model) => model.pricedGames === model.games),
-    (model) => model.cost / model.games,
+    models.filter((actor) => actor.pricedGames === actor.games),
+    (actor) => actor.cost / actor.games,
   );
 
   return cohort
-    .map((model) => {
-      const attempts = model.guesses + model.invalidActions;
-      const adjustedSuccess = (model.wins + (5 * overallSuccessRate)) / (model.games + 5);
-      const guessEfficiency = model.wins
-        ? Math.max(0, Math.min(1, (6 - (model.winningGuesses / model.wins)) / 5))
+    .map((actor) => {
+      const attempts = actor.guesses + actor.invalidActions;
+      const adjustedSuccess = (actor.wins + (5 * overallSuccessRate)) / (actor.games + 5);
+      const guessEfficiency = actor.wins
+        ? Math.max(0, Math.min(1, (6 - (actor.winningGuesses / actor.wins)) / 5))
         : 0;
-      const validity = attempts ? 1 - (model.invalidActions / attempts) : 0;
-      const speedEfficiency = speedScores.get(model.modelId) ?? 0.5;
-      const costEfficiency = costScores.get(model.modelId) ?? 0.5;
+      const validity = attempts ? 1 - (actor.invalidActions / attempts) : 0;
+      const speedEfficiency = speedScores.get(actor.actorId) ?? 0.5;
+      const costEfficiency = costScores.get(actor.actorId) ?? 0.5;
+      const isHuman = actor.actorKind === "human";
       return {
         rank: 0,
         score: 100 * ((0.65 * adjustedSuccess) + (0.15 * guessEfficiency)
           + (0.10 * validity) + (0.05 * speedEfficiency) + (0.05 * costEfficiency)),
-        modelId: model.modelId,
-        displayName: displayModelName(model.modelId),
-        games: model.games,
-        successRate: model.wins / model.games,
-        avgGuessesPerWin: model.wins ? model.winningGuesses / model.wins : null,
-        avgTimePerGuessMs: attempts ? model.latencyMs / attempts : 0,
-        costPerGame: model.pricedGames === model.games ? model.cost / model.games : null,
-        starterWord: mostCommonStarter(model.starters),
-        invalidWordRate: attempts ? model.invalidActions / attempts : 0,
-        provisional: model.games < 10,
+        actorId: actor.actorId,
+        actorKind: actor.actorKind,
+        displayName: isHuman ? "All humans" : displayModelName(actor.actorId),
+        games: actor.games,
+        successRate: actor.wins / actor.games,
+        avgGuessesPerWin: actor.wins ? actor.winningGuesses / actor.wins : null,
+        avgTimePerGuessMs: isHuman || !attempts ? null : actor.latencyMs / attempts,
+        costPerGame: !isHuman && actor.pricedGames === actor.games ? actor.cost / actor.games : null,
+        starterWord: mostCommonStarter(actor.starters),
+        invalidWordRate: attempts ? actor.invalidActions / attempts : 0,
+        provisional: actor.games < 10,
       };
     })
-    .sort((a, b) => b.score - a.score || a.modelId.localeCompare(b.modelId))
+    .sort((a, b) => b.score - a.score || a.actorId.localeCompare(b.actorId))
     .map((row, index) => ({ ...row, rank: index + 1 }));
 }
 
-function isModelMetric(value: unknown): value is WordleMetric {
-  if (!value || typeof value !== "object") return false;
-  const metric = value as Partial<WordleMetric>;
-  return typeof metric.actorId === "string" && metric.actorId.includes(":")
-    && typeof metric.won === "boolean" && typeof metric.guesses === "number"
-    && typeof metric.latencyMs === "number" && typeof metric.inputTokens === "number"
-    && typeof metric.outputTokens === "number" && typeof metric.invalidActions === "number";
-}
-
 function efficiencyPercentiles(
-  models: Accumulator[],
-  value: (model: Accumulator) => number,
+  actors: Accumulator[],
+  value: (actor: Accumulator) => number,
 ): Map<string, number> {
-  if (models.length === 1) return new Map([[models[0].modelId, 1]]);
-  const sorted = [...models].sort((a, b) => value(a) - value(b));
+  if (actors.length === 0) return new Map();
+  if (actors.length === 1) return new Map([[actors[0].actorId, 1]]);
+  const sorted = [...actors].sort((a, b) => value(a) - value(b));
   const result = new Map<string, number>();
   for (let start = 0; start < sorted.length;) {
     let end = start;
     while (end + 1 < sorted.length && value(sorted[end + 1]) === value(sorted[start])) end += 1;
     const averageRank = (start + end) / 2;
     const score = 1 - (averageRank / (sorted.length - 1));
-    for (let index = start; index <= end; index += 1) result.set(sorted[index].modelId, score);
+    for (let index = start; index <= end; index += 1) result.set(sorted[index].actorId, score);
     start = end + 1;
   }
   return result;

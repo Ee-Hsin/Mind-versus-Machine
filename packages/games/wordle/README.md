@@ -12,14 +12,15 @@ must not inspect guesses or reproduce Wordle scoring.
   to three times without consuming a Wordle guess.
 - Conceal AI guesses and commentary during human play. Release their event
   history when the human finishes, even if models are still completing turns.
-- For benchmarks, rank a solve above a loss and fewer guesses above more guesses.
+- Rank a solve above a loss, and fewer guesses above more guesses.
 
 ## Teammate handoff
 
 1. Port the answer/guess word lists and pure scoring rules into `model.ts`.
 2. Confirm the prompt and increment `WORDLE_PROMPT_VERSION` when it changes.
-3. Implement shared-answer play and benchmark orchestration in `definition.ts`.
+3. Shared-answer play is implemented in `definition.ts`; the human seat is driven
+   directly by `apps/web/lib/arena/live-wordle.ts` instead.
 4. Keep the adapter as the only bridge between the model and generic engine.
 
-Open decisions: exact benchmark tie policy and whether model commentary should be
+Open decisions: tie-break policy and whether model commentary should be
 stored as generated commentary only or include provider reasoning events.

@@ -6,7 +6,7 @@ import type {
   CodenamesSeat,
   CodenamesTeam,
 } from "@ai-ramp/protocol";
-import { Codenames } from "../../../../game_models/codenames/codenames";
+import { Codenames } from "./codenames";
 
 export interface CodenamesState {
   words: string[];

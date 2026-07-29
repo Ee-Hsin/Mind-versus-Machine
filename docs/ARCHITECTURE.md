@@ -1,74 +1,112 @@
 # Architecture
 
-## Product shape
+## The shape
 
-The arena has one set of game rules and two execution paths:
-
-1. **Play:** Next.js creates a room/run, Supabase stores coordination state, and
-   a long-running worker alternates between model and human actions.
-2. **Benchmark:** the CLI calls the same game definitions and model runtime
-   directly, persisting events to Supabase when configured.
-
-The frontend renders public events. It never runs a game model or receives
-canonical secret state.
+One long-lived Node process serves the Next.js UI, the HTTP API, and the live
+games. There is no worker and no queue.
 
 ```mermaid
 flowchart LR
-  Browser --> Web["Next.js web and API"]
-  Web --> Protocol["Protocol contracts"]
-  Web --> DB[(Supabase)]
-  Worker["Node worker"] --> DB
-  Worker --> Engine["Arena engine"]
-  CLI["Benchmark CLI"] --> Engine
+  Browser -- "POST /guesses" --> Web["Next.js server"]
+  Web -- "SSE /stream" --> Browser
+  Web --> Registry["MatchRegistry (in memory)"]
+  Registry --> Engine["Arena engine"]
   Engine --> Games["Game modules"]
   Engine --> Models["Vercel AI SDK runtime"]
-  Games --> Protocol
+  Registry -. "async writes" .-> DB[(Supabase)]
+  Web --> DB
 ```
+
+The dotted edge is the important one: persistence is off the response path.
+
+## Why it is built this way
+
+The previous design used Postgres as an IPC bus between the web app and a
+worker. Every interaction became table rows that both sides rediscovered by
+polling — a 1000ms claim loop, a 500ms worker loop, and a 700ms browser loop
+stacked on top of each other, plus a full event-history refetch twice a second.
+
+The worker already held live game state in memory. It had no door. This design
+adds the door and deletes the bus.
 
 ## Package boundaries
 
 ### Protocol
 
-`@ai-ramp/protocol` contains data that may cross a process boundary: request
-schemas, game actions, public state, event envelopes, manifests, and run DTOs.
-It cannot import React, Supabase, AI SDK providers, or game implementations.
+`@ai-ramp/protocol` holds anything that crosses a boundary: request schemas,
+game actions, public state, event envelopes, manifests, and DTOs. It cannot
+import React, Supabase, AI SDK providers, or game implementations.
 
 ### Engine
 
-`@ai-ramp/engine` defines how orchestration talks to games, model players,
-interactive humans, events, and storage. Generic code may retry or time actions,
-but it must not understand Wordle guesses or Codenames roles.
+`@ai-ramp/engine` defines how orchestration talks to games, model players, and
+event sinks, and provides `runAdapter` — the generic turn loop. It may retry or
+time an action, but it must not understand a Wordle guess or a Codenames role.
 
 ### Games
 
-Each game package owns pure rules, canonical serialization, prompts, the adapter,
-match structure, scoring, and visibility policy. This keeps game-specific changes
-inside one teammate-owned package.
+Each game package owns its rules, word lists, prompts, adapter, match
+definition, and scoring. A game module is runnable without Next.js, Supabase, or
+a network.
 
-### Model runtime and storage
+### Storage and model runtime
 
-`model-runtime` adapts Vercel AI SDK models to `ModelPlayer`. `storage` adapts
-Supabase to `ArenaRepository`. Neither owns gameplay decisions.
+`storage` adapts Supabase; `model-runtime` adapts the Vercel AI SDK. Neither
+makes gameplay decisions.
 
-### Applications
+### The live layer
 
-Applications are composition roots. They select concrete games, storage, and
-model providers, but should contain little reusable domain logic.
+`apps/web/lib/arena` is the composition root for live play:
 
-## Intended play lifecycle
+| File | Owns |
+| --- | --- |
+| `registry.ts` | The `gameId → LiveGame` map, admission control, idle eviction, expiry sweep, SIGTERM drain |
+| `live-wordle.ts` | One game: model boards, the human board, subscribers, rehydration |
+| `views.ts` | Projection to a client — the one place concealment is decided |
+| `persist/wordle.ts` | Batched turn writes, off the response path |
 
-1. The API validates a play request and creates a participant plus run/room.
-2. A ready run enters the queue; Codenames waits in a lobby for both humans.
-3. The worker claims the run and asks its game definition to execute a match.
-4. The definition requests either a model decision or a durable human action.
-5. Every meaningful transition becomes an ordered, audience-tagged event.
-6. The browser polls events by cursor and rebuilds a game-specific view.
+## Human seats are not model players
 
-Canonical state remains server-side. Public state is always projected by the
-owning game adapter for a spectator or seat.
+In the old design the human was a fake async `ModelPlayer` blocked inside
+`runAdapter`, waiting on a database row. A human guess is genuinely
+request/response, so the human's board is now a plain `WordleModel` that the
+guess route calls directly.
 
-## Intentional omissions
+Three things fall out of that:
 
-The wireframe does not choose queue retry policy, Elo details, provider settings,
-or Imposter rules. Those decisions should be made in the workstream that owns the
-behavior and reflected in protocol only when data must cross a boundary.
+- Rehydration is trivial, because nothing is suspended mid-loop.
+- No promise dangles waiting for a player who closed the tab.
+- The "three invalid guesses abandons the match" rule in `runAdapter` — correct
+  for a model emitting malformed output, disastrous for a human typo — cannot
+  reach a person at all.
+
+That last one still needs solving generically before Codenames and Imposter get
+human seats again.
+
+## Concealment
+
+Game definitions publish canonical state with real letters. Every client-facing
+path goes through `toSeatView` in `lib/arena/views.ts`, which blanks model
+letters until the human's board is over. One function to audit, rather than one
+per route.
+
+The answer itself lives in `wordle_games.answer` and in `LiveWordleGame`, and is
+attached to a response only when `revealed` is true.
+
+## Lifecycle
+
+1. `POST /api/games` picks an answer, writes the game, and starts the model
+   boards. The response carries no answer.
+2. Model boards race in parallel and finish in roughly 10–15 seconds.
+3. The human plays over `POST /guesses`, one round trip per guess.
+4. When the human's board ends, everything unseals. When both sides have
+   settled, the game completes.
+5. Quitting forfeits the human participant and leaves the models running.
+6. Anything unfinished after 24 hours is swept and auto-forfeited.
+
+## Deliberately not done yet
+
+No model gateway: there is no per-provider rate limiting, no per-call timeout,
+and no circuit breaker. A hung provider currently stalls a game's model boards
+indefinitely. The six configured providers shard the load across six separate
+quota pools, which is the only thing holding the burst together today.

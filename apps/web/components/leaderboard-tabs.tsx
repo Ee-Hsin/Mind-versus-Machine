@@ -1,10 +1,10 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 
+// Only games with a live leaderboard. Codenames and Imposter return here once
+// they are ported onto the live-play stack.
 const games = [
   { id: "wordle", label: "Wordle" },
-  { id: "codenames", label: "Codenames" },
-  { id: "imposter", label: "Imposter" },
 ] as const;
 
 export function LeaderboardTabs({ active }: Readonly<{ active: string }>) {

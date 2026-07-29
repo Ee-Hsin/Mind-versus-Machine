@@ -11,15 +11,15 @@ role-safe projections.
   blue spymaster and operative seats.
 - Spymasters see the key; operatives see colors only after cards are revealed.
 - Actions are `{ type: "clue" }`, `{ type: "guess" }`, and `{ type: "stop" }`.
-- Benchmarks play two legs on the same board/key with model colors swapped.
+- A fair head-to-head plays two legs on the same board/key with colours swapped.
 
 ## Teammate handoff
 
 1. Port board generation, clue validation, guessing, stopping, and serialization
    into `model.ts`.
 2. Confirm both role prompts and increment `CODENAMES_PROMPT_VERSION` on change.
-3. Implement human-team play and paired benchmark fixtures in `definition.ts`.
+3. Human-team play still needs porting onto the live-play stack (UI in `parked/`).
 4. Audit every projection to ensure operatives never receive hidden colors.
 
-Open decisions: benchmark scoring beyond win/loss and how much model commentary
+Open decisions: scoring beyond win/loss and how much model commentary
 to reveal during play versus after the shared game ends.

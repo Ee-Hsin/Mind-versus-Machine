@@ -12,8 +12,6 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
-import { CodenamesLaunchDialog } from "@/components/codenames/codenames-launch-dialog";
-import { ImposterLaunchDialog } from "@/components/imposter/imposter-launch-dialog";
 import { WordleLaunchDialog } from "@/components/wordle/wordle-launch-dialog";
 import type { GameViewId, GameViewRegistration } from "@/games/registry";
 
@@ -23,11 +21,14 @@ const gameIcons: Record<GameViewId, LucideIcon> = {
   imposter: EyeOffIcon,
 };
 
+/**
+ * Dispatches a registered game to its launch dialog. Games without one yet fall
+ * through to a read-only details dialog, so bringing Codenames or Imposter back
+ * is a matter of registering them and wiring one more branch here.
+ */
 export function GameDialog({ game }: Readonly<{ game: GameViewRegistration }>) {
   const Icon = gameIcons[game.id];
   if (game.id === "wordle") return <WordleLaunchDialog game={game} icon={Icon} />;
-  if (game.id === "codenames") return <CodenamesLaunchDialog game={game} icon={Icon} />;
-  if (game.id === "imposter") return <ImposterLaunchDialog game={game} icon={Icon} />;
 
   return (
     <Dialog>

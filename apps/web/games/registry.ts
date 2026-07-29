@@ -1,6 +1,6 @@
 import type { GameType } from "@ai-ramp/protocol";
 
-export type GameViewId = GameType | "imposter";
+export type GameViewId = GameType;
 
 export interface GameViewRegistration {
   id: GameViewId;
@@ -12,6 +12,11 @@ export interface GameViewRegistration {
   evaluation: string;
 }
 
+/**
+ * Games playable right now. Codenames and Imposter still have rules packages and
+ * arena components on disk, but they are not wired to the live-play stack yet —
+ * re-add them here once they are ported.
+ */
 export const gameViews: GameViewRegistration[] = [
   {
     id: "wordle",
@@ -21,23 +26,5 @@ export const gameViews: GameViewRegistration[] = [
     dialogDescription: "You and the selected models solve one hidden word on separate boards.",
     matchFormat: "Six guesses each. Model boards and commentary stay sealed until your game ends.",
     evaluation: "Solve rate, guesses used, invalid moves, and each model's route to the answer.",
-  },
-  {
-    id: "codenames",
-    label: "Codenames",
-    summary: "Team up with a friend and take on an AI spymaster and operative.",
-    dialogTitle: "Create a Codenames room",
-    dialogDescription: "Bring a teammate. The two of you face an AI spymaster and AI operative.",
-    matchFormat: "Two humans versus two models, with hidden colors restricted to each spymaster.",
-    evaluation: "Clue quality, semantic associations, risky guesses, and the final win condition.",
-  },
-  {
-    id: "imposter",
-    label: "Imposter",
-    summary: "Give clues, read the table, and expose the player bluffing with only a hint.",
-    dialogTitle: "Play Imposter",
-    dialogDescription: "Join five models in a hidden-role word game.",
-    matchFormat: "Two clue rounds, an accusation, public defenses, and a final vote.",
-    evaluation: "Bluffing, social deduction, persuasion, voting judgment, and recovery under suspicion.",
   },
 ];

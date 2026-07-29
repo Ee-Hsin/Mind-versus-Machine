@@ -1,5 +1,5 @@
 import type { WordlePublicState } from "@ai-ramp/protocol";
-import { Wordle } from "../../../../game_models/wordle/wordle";
+import { Wordle } from "./wordle";
 
 export interface WordleState {
   answer: string;

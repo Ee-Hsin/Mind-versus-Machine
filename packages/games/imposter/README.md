@@ -1,7 +1,7 @@
 # Imposter package
 
 This package adapts the Imposter game to the generic engine contracts. The pure
-rules live in `game_models/imposter/` and are imported unchanged; everything here
+rules live in `src/imposter.ts` and are imported unchanged; everything here
 is the translation layer (the generic engine only ever sees typed actions and
 role-safe projections).
 
@@ -17,13 +17,13 @@ role-safe projections).
 - Actions are `{ type: "clue" }`, `{ type: "vote" }`, `{ type: "defend" }`, and
   `{ type: "guess" }`. Models return actions directly; reasoning is not streamed.
 - Play mode seats the human at `P1` and alternates two selected models across `P2`-`P6`.
-  Benchmarks run one random game across six models.
+  One random game runs across six seats.
 
 ## Files
 
 | File | Owns |
 | --- | --- |
-| `src/model.ts` | Package-local façade over the pure model in `game_models/imposter/` (`apply`, `formattedState`, role-safe `publicState`, `serialize`). |
+| `src/model.ts` | Package-local façade over the pure model in `src/imposter.ts` (`apply`, `formattedState`, role-safe `publicState`, `serialize`). |
 | `src/prompts.ts` | Role system prompts (crew vs imposter) and `IMPOSTER_PROMPT_VERSION`. |
 | `src/adapter.ts` | Translates seats/actions between the model and the generic `GameAdapter` contract; role-safe projections. |
 | `src/definition.ts` | Match orchestration via `runAdapter`, plus per-seat metrics. |

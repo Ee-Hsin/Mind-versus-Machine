@@ -10,16 +10,13 @@ export const codenamesDefinition: GameDefinition<"codenames"> = {
   async runMatch(context) {
     const model = new CodenamesModel();
     const adapter = new CodenamesAdapter(model);
-    const matchId = String(context.matchNumber);
     const publish = (type: string, audience: ArenaEventAudience, payload: unknown) =>
       context.events.publish({
-        sequence: 0,
-        runId: context.runId,
+        gameId: context.gameId,
         gameType: "codenames",
         type,
         timestamp: new Date().toISOString(),
         audience,
-        matchId,
         payload,
       });
 
@@ -66,7 +63,7 @@ export const codenamesDefinition: GameDefinition<"codenames"> = {
       metrics,
       // finalState carries the full key so a completed game can flip every card
       // for the operative and spectators.
-      games: [{ gameId: `codenames-${matchId}`, result: run.result, finalState: run.finalState }],
+      games: [{ gameId: `codenames-${context.gameId}`, result: run.result, finalState: run.finalState }],
     });
     return { metrics };
   },

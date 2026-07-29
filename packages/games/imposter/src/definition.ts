@@ -11,25 +11,21 @@ export const imposterDefinition: GameDefinition<"imposter"> = {
     const timestamp = () => new Date().toISOString();
 
     await context.events.publish({
-      sequence: 0,
-      runId: context.runId,
+      gameId: context.gameId,
       gameType: "imposter",
       type: "match_started",
       timestamp: timestamp(),
       audience: { kind: "public" },
-      matchId: String(context.matchNumber),
       payload: { state: adapter.publicStateFor("spectator") },
     });
-    if (context.config.mode === "play") {
+    if (context.humanSeats.includes("P1")) {
       await context.events.publish({
-        sequence: 0,
-        runId: context.runId,
+        gameId: context.gameId,
         gameType: "imposter",
         type: "seat_state",
         timestamp: timestamp(),
         audience: { kind: "seat", seatId: "P1" },
-        matchId: String(context.matchNumber),
-        gameId: "P1",
+        seatId: "P1",
         payload: { state: adapter.publicStateFor("P1") },
       });
     }
@@ -47,25 +43,21 @@ export const imposterDefinition: GameDefinition<"imposter"> = {
             outputTokens: turn.outputTokens,
           };
           await context.events.publish({
-            sequence: 0,
-            runId: context.runId,
+            gameId: context.gameId,
             gameType: "imposter",
             type: "turn",
             timestamp: timestamp(),
             audience: { kind: "public" },
-            matchId: String(context.matchNumber),
             payload: { ...common, state: adapter.publicStateFor("spectator") },
           });
-          if (context.config.mode === "play") {
+          if (context.humanSeats.includes("P1")) {
             await context.events.publish({
-              sequence: 0,
-              runId: context.runId,
+              gameId: context.gameId,
               gameType: "imposter",
               type: "seat_state",
               timestamp: timestamp(),
               audience: { kind: "seat", seatId: "P1" },
-              matchId: String(context.matchNumber),
-              gameId: "P1",
+              seatId: "P1",
               payload: { ...common, state: adapter.publicStateFor("P1") },
             });
           }
@@ -91,16 +83,14 @@ export const imposterDefinition: GameDefinition<"imposter"> = {
       };
     });
     await context.events.publish({
-      sequence: 0,
-      runId: context.runId,
+      gameId: context.gameId,
       gameType: "imposter",
       type: "match_completed",
       timestamp: timestamp(),
       audience: { kind: "postgame" },
-      matchId: String(context.matchNumber),
       payload: {
         metrics,
-        games: [{ gameId: `imposter-${context.matchNumber}`, result: run.result, finalState: run.finalState }],
+        games: [{ gameId: `imposter-${context.gameId}`, result: run.result, finalState: run.finalState }],
       },
     });
     return { metrics };

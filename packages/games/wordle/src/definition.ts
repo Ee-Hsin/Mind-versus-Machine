@@ -1,83 +1,74 @@
 import { runAdapter, type GameDefinition } from "@ai-ramp/engine";
+import type { WordleLetterState, WordleTurnEventPayload } from "@ai-ramp/protocol";
 import { WordleAdapter } from "./adapter";
 import { WordleModel } from "./model";
 
+/**
+ * Runs the model boards for one Wordle game. Every seat handed to this
+ * definition is a model — the human's board is driven directly by HTTP requests
+ * in the live layer, because a human guess is request/response rather than a
+ * turn loop.
+ *
+ * Boards race in parallel on the same answer, and each `turn` event carries the
+ * canonical guess. Concealing letters from a live spectator is the projection
+ * layer's job, not this one's, so there is exactly one place that decides it.
+ */
 export const wordleDefinition: GameDefinition<"wordle"> = {
   gameType: "wordle",
   async runMatch(context) {
-    const seeded = new WordleModel();
-    const { answer } = seeded.serialize();
-    const outcomes = await Promise.all(Object.entries(context.players).map(async ([actorId, player]) => {
-      const adapter = new WordleAdapter(actorId, new WordleModel({ answer, guesses: [] }));
-      const run = await runAdapter(adapter, { [actorId]: player }, {
-        signal: context.signal,
-        observer: {
-          async onTurn(turn) {
-            const state = adapter.publicStateFor();
-            const common = {
-              playerId: actorId,
-              accepted: turn.accepted,
-              attempt: turn.attempt,
-              latencyMs: turn.latencyMs,
-              inputTokens: turn.inputTokens,
-              outputTokens: turn.outputTokens,
-            };
+    const { answer } = context.config;
+    const timestamp = () => new Date().toISOString();
 
-            if (actorId !== "human-wordle") {
+    const outcomes = await Promise.all(
+      Object.entries(context.players).map(async ([seatId, player]) => {
+        const adapter = new WordleAdapter(seatId, new WordleModel({ answer, guesses: [] }));
+        const run = await runAdapter(adapter, { [seatId]: player }, {
+          signal: context.signal,
+          observer: {
+            async onTurn(turn) {
+              const state = adapter.publicStateFor();
+              const guess = (turn.action as { guess?: string } | null)?.guess ?? "";
+              const row = turn.accepted ? state.board.at(-1) : undefined;
+              const payload: WordleTurnEventPayload = {
+                seatId,
+                guess: (row?.guess ?? guess).toUpperCase(),
+                states: (row?.states ?? []) as WordleLetterState[],
+                accepted: turn.accepted,
+                attempt: turn.attempt,
+                latencyMs: turn.latencyMs,
+                inputTokens: turn.inputTokens,
+                outputTokens: turn.outputTokens,
+                guessesMade: state.guessesMade,
+                triesRemaining: state.triesRemaining,
+                isWon: state.isWon,
+                isGameOver: state.isGameOver,
+              };
               await context.events.publish({
-                sequence: 0, runId: context.runId, gameType: "wordle", type: "turn",
-                timestamp: new Date().toISOString(), audience: { kind: "public" },
-                matchId: String(context.matchNumber), gameId: actorId,
-                payload: {
-                  ...common,
-                  action: null,
-                  revealed: false,
-                  state: {
-                    board: state.board.map((row) => ({ guess: "", states: row.states })),
-                    guessesMade: state.guessesMade,
-                    triesRemaining: state.triesRemaining,
-                    isWon: state.isWon,
-                    isGameOver: state.isGameOver,
-                  },
-                },
+                gameId: context.gameId,
+                gameType: "wordle",
+                type: "turn",
+                seatId,
+                timestamp: timestamp(),
+                audience: { kind: "postgame" },
+                payload,
               });
-              await context.events.publish({
-                sequence: 0, runId: context.runId, gameType: "wordle", type: "turn_reveal",
-                timestamp: new Date().toISOString(), audience: { kind: "postgame" },
-                matchId: String(context.matchNumber), gameId: actorId,
-                payload: { ...common, action: turn.action, revealed: true, state },
-              });
-              return;
-            }
-
-            await context.events.publish({
-              sequence: 0, runId: context.runId, gameType: "wordle", type: "turn",
-              timestamp: new Date().toISOString(), audience: { kind: "public" },
-              matchId: String(context.matchNumber), gameId: actorId,
-              payload: { ...common, action: turn.action, revealed: true, state },
-            });
+            },
           },
-        },
-      });
-      const metric = {
-        actorId, score: run.result.scores[actorId] ?? 0, won: (run.result.scores[actorId] ?? 0) > 0,
-        guesses: adapter.serialize().guesses.length,
-        invalidActions: run.turns.filter((turn) => !turn.accepted).length,
-        latencyMs: run.turns.reduce((sum, turn) => sum + turn.latencyMs, 0),
-        inputTokens: run.inputTokens, outputTokens: run.outputTokens,
-      };
-      return {
-        metric,
-        game: { gameId: actorId, result: run.result, finalState: run.finalState },
-      };
-    }));
-    const metrics = outcomes.map(({ metric }) => metric);
-    const games = outcomes.map(({ game }) => game);
-    await context.events.publish({
-      sequence: 0, runId: context.runId, gameType: "wordle", type: "match_completed",
-      timestamp: new Date().toISOString(), audience: { kind: "postgame" },
-      matchId: String(context.matchNumber), payload: { metrics, games },
-    });
-    return { metrics };
+        });
+
+        return {
+          actorId: seatId,
+          score: run.result.scores[seatId] ?? 0,
+          won: (run.result.scores[seatId] ?? 0) > 0,
+          guesses: adapter.serialize().guesses.length,
+          invalidActions: run.turns.filter((turn) => !turn.accepted).length,
+          latencyMs: run.turns.reduce((sum, turn) => sum + turn.latencyMs, 0),
+          inputTokens: run.inputTokens,
+          outputTokens: run.outputTokens,
+        };
+      }),
+    );
+
+    return { metrics: outcomes };
   },
 };

@@ -7,10 +7,6 @@ import type {
   GameMetrics,
   GamePublicState,
   GameType,
-  HumanRef,
-  PendingTurn,
-  RunConfig,
-  RunSummary,
 } from "@ai-ramp/protocol";
 
 export interface ActionResult {
@@ -37,12 +33,15 @@ export interface GameAdapter<G extends GameType> {
 }
 
 export interface MatchContext<G extends GameType> {
-  runId: string;
-  matchNumber: number;
-  config: RunConfig<G>;
+  gameId: string;
+  config: GameConfig<G>;
+  /**
+   * Seats played by a person rather than a model. Games use this to decide what
+   * to reveal and to whom; the engine itself stays rules-agnostic.
+   */
+  humanSeats: string[];
   events: ArenaEventSink;
   players: Record<string, ModelPlayer>;
-  interactive?: InteractiveController;
   signal?: AbortSignal;
 }
 
@@ -75,36 +74,8 @@ export interface ModelPlayer {
   ): Promise<ModelActOutcome<Action>>;
 }
 
-export interface HumanActionRequest<Action> extends PendingTurn {
-  runId: string;
-  matchId: string;
-  schema: z.ZodType<Action>;
-  signal?: AbortSignal;
-}
-
-export interface InteractiveController {
-  waitUntilReady(runId: string, signal?: AbortSignal): Promise<HumanRef[]>;
-  waitForAction<Action>(request: HumanActionRequest<Action>): Promise<Action>;
-}
-
 export interface ArenaEventSink {
   publish(event: ArenaEvent): Promise<void>;
-}
-
-export interface ArenaRepository {
-  createRun(config: RunConfig, status?: "queued" | "running" | "lobby"): Promise<RunSummary>;
-  appendEvent(event: ArenaEvent): Promise<void>;
-  listEvents(runId: string, after?: number, limit?: number): Promise<ArenaEvent[]>;
-  getRun(runId: string): Promise<RunSummary | null>;
-  listRuns(limit?: number): Promise<RunSummary[]>;
-  claimNextRun(workerId: string): Promise<RunSummary | null>;
-  queueRun(runId: string): Promise<void>;
-  requestCancellation(runId: string): Promise<void>;
-  isCancellationRequested(runId: string): Promise<boolean>;
-  heartbeat(runId: string, workerId: string): Promise<void>;
-  cancelRun(runId: string): Promise<void>;
-  finishRun(runId: string, result: unknown): Promise<void>;
-  failRun(runId: string, error: string): Promise<void>;
 }
 
 export interface TurnTelemetry {
@@ -212,26 +183,4 @@ export async function runAdapter<G extends GameType>(
     result: abandoned ? { scores: {}, summary: `Abandoned after ${maxAttempts} invalid attempts.` } : adapter.result(),
     finalState: adapter.serialize(), turns, inputTokens, outputTokens,
   };
-}
-
-export async function runPool<T>(tasks: (() => Promise<T>)[], concurrency: number) {
-  if (!Number.isInteger(concurrency) || concurrency < 1) throw new Error("Concurrency must be a positive integer.");
-  const results: PromiseSettledResult<T>[] = new Array(tasks.length);
-  let next = 0;
-  async function worker() {
-    while (next < tasks.length) {
-      const index = next++;
-      try { results[index] = { status: "fulfilled", value: await tasks[index]() }; }
-      catch (reason) { results[index] = { status: "rejected", reason }; }
-    }
-  }
-  await Promise.all(Array.from({ length: Math.min(concurrency, tasks.length) }, worker));
-  return results;
-}
-
-export const INITIAL_ELO = 1200;
-export function updateElo(ratingA: number, ratingB: number, scoreA: number) {
-  const expectedA = 1 / (1 + 10 ** ((ratingB - ratingA) / 400));
-  const delta = 32 * (scoreA - expectedA);
-  return { ratingA: ratingA + delta, ratingB: ratingB - delta };
 }

@@ -2,13 +2,15 @@ import { InfoIcon, TrophyIcon } from "lucide-react";
 import { LeaderboardTabs } from "@/components/leaderboard-tabs";
 import { repository } from "@/lib/api/repository";
 import { buildWordleLeaderboard } from "@/lib/leaderboard/wordle";
+import { cn } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
 export default async function WordleLeaderboardPage() {
-  const replays = await repository().listReplaysByGame("wordle");
-  const leaderboard = buildWordleLeaderboard(replays);
+  const leaderboard = buildWordleLeaderboard(await repository().listWordleResults());
   const totalBoards = leaderboard.reduce((sum, row) => sum + row.games, 0);
+  const modelCount = leaderboard.filter((row) => row.actorKind === "model").length;
+  const humanBoards = leaderboard.find((row) => row.actorKind === "human")?.games ?? 0;
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-8 py-10 sm:py-16">
@@ -21,20 +23,22 @@ export default async function WordleLeaderboardPage() {
           <p className="text-sm font-medium text-muted-foreground">Game leaderboard</p>
           <h1 className="font-heading text-4xl font-semibold tracking-tight sm:text-5xl">Wordle</h1>
           <p className="max-w-2xl text-muted-foreground">
-            Performance across every completed model board, ranked with a balanced Wordle evaluation score.
+            Every model and every human who has played, ranked on the same board with a balanced
+            Wordle evaluation score.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm text-muted-foreground">
-          <span className="rounded-full border bg-card px-3 py-1">{leaderboard.length} models</span>
-          <span className="rounded-full border bg-card px-3 py-1">{totalBoards} completed boards</span>
+          <span className="rounded-full border bg-card px-3 py-1">{modelCount} models</span>
+          <span className="rounded-full border bg-card px-3 py-1">{humanBoards} human boards</span>
+          <span className="rounded-full border bg-card px-3 py-1">{totalBoards} boards total</span>
         </div>
       </header>
 
       <section aria-labelledby="wordle-rankings" className="overflow-hidden rounded-2xl border bg-card shadow-sm">
         <div className="flex items-center justify-between gap-4 border-b px-5 py-4">
           <div>
-            <h2 className="font-heading font-semibold" id="wordle-rankings">Model rankings</h2>
-            <p className="mt-0.5 text-xs text-muted-foreground">Models with fewer than 10 boards are provisional.</p>
+            <h2 className="font-heading font-semibold" id="wordle-rankings">Rankings</h2>
+            <p className="mt-0.5 text-xs text-muted-foreground">Fewer than 10 boards is provisional.</p>
           </div>
           <div className="group relative">
             <button
@@ -56,7 +60,12 @@ export default async function WordleLeaderboardPage() {
                 + 5% speed efficiency + 5% cost efficiency.
               </p>
               <p className="mt-2 leading-5 text-muted-foreground">
-                Success is adjusted toward the overall field by five prior games, preventing a model from ranking first after one lucky win.
+                Success is adjusted toward the overall field by five prior games, preventing anyone from ranking first after one lucky win.
+              </p>
+              <p className="mt-2 leading-5 text-muted-foreground">
+                Humans score neutrally on speed and cost. Neither translates to a person — think time
+                is not recorded and a human burns no tokens — so those components neither reward nor
+                penalise the human row.
               </p>
             </div>
           </div>
@@ -67,7 +76,7 @@ export default async function WordleLeaderboardPage() {
               <thead className="bg-muted/60 text-left text-xs uppercase tracking-wider text-muted-foreground">
                 <tr>
                   <th className="px-5 py-4 font-medium">Rank</th>
-                  <th className="px-5 py-4 font-medium">Model</th>
+                  <th className="px-5 py-4 font-medium">Player</th>
                   <th className="px-5 py-4 text-right font-medium">Score</th>
                   <th className="px-5 py-4 text-right font-medium">Success rate</th>
                   <th className="px-5 py-4 text-right font-medium">Avg guesses / win</th>
@@ -79,7 +88,14 @@ export default async function WordleLeaderboardPage() {
               </thead>
               <tbody>
                 {leaderboard.map((row) => (
-                  <tr className="border-t transition-colors hover:bg-muted/30" key={row.modelId}>
+                  <tr
+                    className={cn(
+                      "border-t transition-colors hover:bg-muted/30",
+                      // The human cohort is the row people came to compare against.
+                      row.actorKind === "human" && "bg-wordle-present/10 hover:bg-wordle-present/15",
+                    )}
+                    key={row.actorId}
+                  >
                     <td className="px-5 py-4 font-mono text-muted-foreground">#{row.rank}</td>
                     <td className="px-5 py-4">
                       <div className="font-medium">{row.displayName}</div>
@@ -101,14 +117,15 @@ export default async function WordleLeaderboardPage() {
           </div>
         ) : (
           <div className="px-6 py-16 text-center text-muted-foreground">
-            Complete a Wordle benchmark to populate the leaderboard.
+            Play a game of Wordle to populate the leaderboard.
           </div>
         )}
       </section>
 
       <p className="text-xs leading-5 text-muted-foreground">
         Cost estimates use standard public API token prices and exclude caching, free tiers, and negotiated rates.
-        Time per guess includes accepted and invalid attempts. Statistics include up to the 1,000 most recent completed matches.
+        Time per guess includes accepted and invalid attempts. Forfeited and abandoned boards are excluded
+        per player, so the model boards from a game a human quit still count.
       </p>
     </div>
   );
@@ -118,7 +135,8 @@ function percent(value: number): string {
   return new Intl.NumberFormat("en-US", { style: "percent", maximumFractionDigits: 1 }).format(value);
 }
 
-function formatDuration(milliseconds: number): string {
+function formatDuration(milliseconds: number | null): string {
+  if (milliseconds === null) return "—";
   return milliseconds < 1000 ? `${Math.round(milliseconds)}ms` : `${(milliseconds / 1000).toFixed(2)}s`;
 }
 

@@ -1,62 +1,76 @@
-# AI Ramp Games
+# Mind versus Machine
 
-AI Ramp Games is a humans-versus-AI playground for games such as Wordle,
-Codenames, and Imposter. The same game modules also support informal model
-benchmarks from a CLI.
+Play familiar games against leading AI models. Every game doubles as a
+lightweight, transparent evaluation: humans and models solve the same puzzle and
+land on the same leaderboard.
 
-This repository is currently an **architecture wireframe**. It establishes the
-workspace, contracts, application boundaries, and team handoffs. The game
-engines, queue worker, Supabase queries, model execution, and full UI are not
-implemented yet.
+Wordle is live. Codenames and Imposter have working rules packages but are not
+yet wired to the live-play stack — see [`parked/`](parked/README.md).
 
 ## Quick start
 
 ```bash
 npm install
-npm run typecheck
-npm run build
+cp .env.example .env        # fill in Supabase + at least one provider key
+npm run dev
 ```
 
-Useful entrypoints:
+Then apply `supabase/migrations/*.sql` in order to a fresh Supabase project.
 
 ```bash
-npm run dev:web
-npm run worker
-npm run cli -- --game wordle --models random-a,random-b --n 3
+npm run typecheck   # every workspace
+npm run check       # game-rule and concealment checks, no database needed
+npm run build
+npm start           # production server
 ```
 
-The worker and CLI intentionally print their resolved composition and exit.
-They do not execute games yet.
+## How a game runs
+
+One long-lived Node process serves the UI and holds live games in memory.
+
+```
+Browser ──POST /guesses──> scored + persisted, colours in the response
+   │
+   ├──local: allowed-guess-list check                    (0ms, no request)
+   └──SSE /stream ──────── model board updates
+
+                  Next.js server
+                    ├─ MatchRegistry:  Map<gameId, LiveGame>
+                    ├─ model seats:    wordleModule.definition.runMatch
+                    ├─ human seat:     a plain WordleModel driven by POSTs
+                    └─ TurnPersister ──> Postgres (resume + replay + leaderboard)
+```
+
+Three properties are worth knowing up front, because most of the design follows
+from them:
+
+- **The answer never reaches the browser.** The client validates words against
+  the public allowed-guess list, so "not in word list" costs nothing, but colours
+  come from the server. That is what keeps the human leaderboard meaningful.
+- **The database is not in the latency path.** Turn rows are written behind the
+  response. They exist for resume, replay, and scoring — none of which anyone is
+  waiting on.
+- **A board is a pure function of (answer, guesses).** Resuming after a refresh,
+  an eviction, or a restart is two queries and a constructor.
 
 ## Workspace
 
 | Area | Responsibility |
 | --- | --- |
-| `apps/web` | Next.js UI, participant cookies, and HTTP API boundary |
-| `apps/worker` | Background composition root for queued play runs |
-| `apps/cli` | Direct model benchmark entrypoint |
-| `packages/protocol` | Serializable game, run, event, and API contracts |
-| `packages/engine` | Provider-neutral orchestration interfaces |
-| `packages/model-runtime` | Vercel AI SDK and model catalog boundary |
-| `packages/storage` | Supabase repository boundary |
-| `packages/games/*` | Rules, prompts, adapters, and match formats per game |
+| `apps/web` | Next.js UI, HTTP API, and the live-game layer in `lib/arena` |
+| `packages/protocol` | Serializable contracts shared across the boundary |
+| `packages/engine` | Provider-neutral turn loop; knows no game's rules |
+| `packages/model-runtime` | Vercel AI SDK and the model catalog |
+| `packages/storage` | Supabase repository |
+| `packages/games/*` | Rules, word lists, prompts, adapters, and match definitions |
+| `parked/` | Codenames and Imposter UI, kept for the next port |
 
 ## Read next
 
 - [Architecture](docs/ARCHITECTURE.md)
-- [Game development](docs/GAME_DEVELOPMENT.md)
 - [API and data](docs/API_AND_DATA.md)
-- [Team workstreams](docs/WORKSTREAMS.md)
-- [Supabase plan](supabase/README.md)
+- [Game development](docs/GAME_DEVELOPMENT.md)
+- [Supabase schema](supabase/README.md)
 
-Copy `.env.example` to `.env` only when a workstream needs real services.
-Provider keys belong in the worker or direct CLI environment, never the browser.
-
-## Wireframe boundaries
-
-- No production database migration or queue implementation.
-- No complete Wordle or Codenames engine.
-- No actual language-model call.
-- No authentication system beyond the documented participant-token design.
-- No automated tests or test framework.
-- No polished frontend; the web app only proves the workspace builds.
+Provider keys are read only by the server. They must never be exposed to the
+browser, and neither must `SUPABASE_SECRET_KEY`.

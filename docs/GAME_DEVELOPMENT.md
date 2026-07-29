@@ -25,36 +25,34 @@ model turn consists of:
 3. A structured decision schema with short generated commentary and one move.
 4. Game-model validation through `applyAction`.
 5. At most three retries with the rejection message added to the next prompt.
+   This budget is right for a model emitting malformed output and wrong for a
+   human typo, which is why human seats bypass it.
 
 Change the prompt-version constant whenever behaviorally meaningful prompt text
-changes. Benchmarks should record engine and prompt versions from the manifest.
+changes. The manifest's engine and prompt versions identify how a result was
+produced.
 
-## Wordle handoff
+## Wordle
 
-Wordle uses a separate model instance for every actor and one shared answer per
-match. The human and models may play concurrently. Model guesses, boards, and
-commentary are postgame data until the human finishes; at that point previous
-model events become visible and remaining model turns may stream normally.
+Every actor gets its own model instance against one shared answer, and the human
+plays concurrently with the models. Model guesses stay sealed until the human's
+board ends; `apps/web/lib/arena/views.ts` is the single place that decides it.
 
-The current package contains signatures and intent only. Port word validation,
-letter scoring, keyboard state, formatted state, and reconstruction before match
-orchestration.
+The human seat does **not** go through `runAdapter` — a human guess is
+request/response, so the guess route drives a plain `WordleModel` directly.
 
-## Codenames handoff
+## Codenames
 
-Codenames has four seats and two role projections. Spymasters see the key;
-operatives see only revealed colors. Human play assigns both red seats to humans
-and blue seats to the selected AI spymaster and operative. Benchmarks use two
-color-swapped legs on the same board/key.
-
-Implement the clue/guess/stop state machine in the model before adding room or
-worker behavior. Treat every operative projection as a security boundary.
+Four seats and two role projections: spymasters see the key, operatives see only
+revealed colours. Rules and projections are complete in
+`packages/games/codenames`; the UI is in `parked/` awaiting a port onto the
+live-play stack. Treat every operative projection as a security boundary.
 
 ## Adding Imposter or another game
 
 1. Add its config, action, public-state, and metric types to `GameSpecMap`.
 2. Create a game package with the five files above and a package README.
-3. Register the module in worker and CLI composition roots.
+3. Register the module in `apps/web/lib/arena` and `apps/web/games/registry.ts`.
 4. Add a frontend renderer/replay registration.
 5. Document seats, hidden information, completion, scoring, and prompt version.
 

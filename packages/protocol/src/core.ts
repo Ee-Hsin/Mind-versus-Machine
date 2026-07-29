@@ -1,148 +1,78 @@
 import { z } from "zod";
-import { codenamesRoleSchema } from "./games/codenames";
+import type { ActorKind, GameStatus, ParticipantOutcome } from "./shared";
 import type { GameConfig, GameType } from "./games";
 
 export const RUNNER_VERSION = "runner-v1" as const;
-export const runModeSchema = z.enum(["play", "benchmark"]);
-export const runStatusSchema = z.enum(["lobby", "queued", "running", "completed", "failed", "cancelled"]);
 
 export const modelRefSchema = z.object({
   id: z.string().min(1),
   displayName: z.string().min(1),
 });
 
-export const createPlayRunRequestSchema = z.discriminatedUnion("gameType", [
-  z.object({
-    gameType: z.literal("wordle"),
-    modelIds: z.array(z.string().min(1)).min(1).max(5),
-    displayName: z.string().trim().min(1).max(40),
-  }),
-  z.object({
-    gameType: z.literal("codenames"),
-    modelIds: z.tuple([z.string().min(1), z.string().min(1)]),
-    displayName: z.string().trim().min(1).max(40),
-    hostRole: codenamesRoleSchema,
-  }),
-  z.object({
-    gameType: z.literal("imposter"),
-    modelIds: z.tuple([z.string().min(1), z.string().min(1)]),
-    displayName: z.string().trim().min(1).max(40),
-  }),
-]);
-
-export const joinRoomRequestSchema = z.object({
-  roomCode: z.string().trim().min(4).max(12),
-  displayName: z.string().trim().min(1).max(40),
-});
-
-export const submitActionRequestSchema = z.object({
-  turnId: z.string().uuid(),
-  action: z.unknown(),
-  idempotencyKey: z.string().min(1).max(100),
-});
-
-export type RunMode = z.infer<typeof runModeSchema>;
-export type RunStatus = z.infer<typeof runStatusSchema>;
 export type ModelRef = z.infer<typeof modelRefSchema>;
-export type CreatePlayRunRequest = z.infer<typeof createPlayRunRequestSchema>;
-export type JoinRoomRequest = z.infer<typeof joinRoomRequestSchema>;
-export type SubmitActionRequest = z.infer<typeof submitActionRequestSchema>;
-
-export interface HumanRef {
-  id: string;
-  displayName: string;
-  seatId: string;
-}
-
-export interface RunConfig<G extends GameType = GameType> {
-  gameType: G;
-  mode: RunMode;
-  gameConfig: GameConfig<G>;
-  models: ModelRef[];
-  matches: number;
-  concurrency: number;
-}
-
-export interface ArenaActor {
-  id: string;
-  displayName: string;
-  kind: "model" | "human";
-  modelId?: string;
-  seatId?: string;
-}
-
-export type ArenaEventAudience =
-  | { kind: "public" }
-  | { kind: "seat"; seatId: string }
-  | { kind: "postgame" }
-  | { kind: "operator" };
-
-export interface ArenaEvent<G extends GameType = GameType> {
-  sequence: number;
-  runId: string;
-  gameType: G;
-  type: string;
-  timestamp: string;
-  audience: ArenaEventAudience;
-  matchId?: string;
-  gameId?: string;
-  payload: unknown;
-}
 
 export interface GameManifest<G extends GameType = GameType> {
   id: G;
   label: string;
   description: string;
-  modes: RunMode[];
   modelCount: { min: number; max: number };
   humanSeats: string[];
   engineVersion: string;
   promptVersion: string;
 }
 
-export interface ViewerSession {
-  participantId: string;
-  displayName: string;
-  seatId: string;
-  ready: boolean;
-  isHost: boolean;
-}
+/**
+ * Who may see an event. `seat` is the per-seat security boundary (a Codenames
+ * spymaster's key); `postgame` unseals once that game's reveal condition is met;
+ * `operator` never reaches a client.
+ */
+export type ArenaEventAudience =
+  | { kind: "public" }
+  | { kind: "seat"; seatId: string }
+  | { kind: "postgame" }
+  | { kind: "operator" };
 
-export interface RoomState {
-  code?: string;
-  participants: ViewerSession[];
-  ready: boolean;
-}
-
-export interface PendingTurn {
-  turnId: string;
+/**
+ * A single transition emitted by a game definition. The sink decides what to do
+ * with it — fan out to live subscribers, persist it, or both. Sequence numbers
+ * are assigned by the sink, not the definition, so definitions stay stateless.
+ */
+export interface ArenaEvent<G extends GameType = GameType> {
   gameId: string;
-  turnNumber: number;
-  seatId: string;
+  gameType: G;
+  type: string;
+  seatId?: string;
+  timestamp: string;
+  audience: ArenaEventAudience;
+  payload: unknown;
 }
 
-export interface RunSummary<G extends GameType = GameType> {
+/** Configuration a game is created with. One game is one match. */
+export interface GameConfiguration<G extends GameType = GameType> {
+  gameType: G;
+  gameConfig: GameConfig<G>;
+  models: ModelRef[];
+}
+
+export interface GameParticipant {
+  seatId: string;
+  actorKind: ActorKind;
+  /** Set when `actorKind` is `model`, e.g. `anthropic:claude-haiku-4-5`. */
+  modelId?: string;
+  displayName: string;
+  /** `undefined` while the board is still in play. */
+  outcome?: ParticipantOutcome;
+}
+
+export interface GameSummary<G extends GameType = GameType> {
   id: string;
-  status: RunStatus;
-  config: RunConfig<G>;
+  gameType: G;
+  status: GameStatus;
   createdAt: string;
   updatedAt: string;
+  /** When an unfinished game is swept and auto-forfeited. */
+  expiresAt: string;
+  completedAt?: string;
 }
 
-export type EventVisibility = "live" | "revealed" | "terminal";
-
-export interface RunSnapshot<G extends GameType = GameType> {
-  run: RunSummary<G>;
-  events: ArenaEvent<G>[];
-  viewer: ViewerSession | null;
-  room: RoomState | null;
-  pendingTurn: PendingTurn | null;
-  visibility: EventVisibility;
-}
-
-export interface RunEventPage<G extends GameType = GameType> {
-  events: ArenaEvent<G>[];
-  cursor: number;
-  visibility: EventVisibility;
-  reset: boolean;
-}
+export * from "./shared";

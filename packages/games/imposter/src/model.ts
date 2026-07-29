@@ -6,7 +6,7 @@ import {
   type ImposterPublicState,
   type ImposterSeat,
 } from "@ai-ramp/protocol";
-import { Imposter, type Move, type Seat } from "../../../../game_models/imposter/imposter";
+import { Imposter, type Move, type Seat } from "./imposter";
 
 export interface ImposterModelState {
   imposter: Seat;
@@ -16,7 +16,7 @@ export interface ImposterModelState {
   moves: Move[];
 }
 
-/** Package-local façade over the pure Imposter state machine (game_models/imposter). */
+/** Package-local façade over the pure Imposter state machine. */
 export class ImposterModel {
   static readonly PLAYER_COUNT = 6;
   private readonly game: Imposter;

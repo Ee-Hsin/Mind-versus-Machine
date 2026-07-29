@@ -47,6 +47,25 @@ export function WordleLaunchDialog({
   const [catalogState, setCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeGameId, setActiveGameId] = useState<string | null>(null);
+
+  // You can only have one Wordle game at a time, so surface an unfinished one up
+  // front as something to resume rather than letting the create fail with a 409.
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    fetch("/api/games/active", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : { game: null }))
+      .then((body: { game: { gameId: string } | null }) => {
+        if (active) setActiveGameId(body.game?.gameId ?? null);
+      })
+      .catch(() => {
+        if (active) setActiveGameId(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -90,23 +109,30 @@ export function WordleLaunchDialog({
     setSubmitting(true);
     setError(null);
     try {
-      const createResponse = await fetch("/api/runs", {
+      // One call: the game is created and the model boards start immediately.
+      // The response deliberately carries no answer — the client validates words
+      // locally and the server scores them.
+      const response = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          gameType: "wordle",
-          modelIds: selectedIds,
-          displayName: name,
-        }),
+        body: JSON.stringify({ modelIds: selectedIds, displayName: name }),
       });
-      if (!createResponse.ok) throw new Error(await responseMessage(createResponse, "Could not create the match."));
-      const created = await createResponse.json() as { run: { id: string } };
 
-      const readyResponse = await fetch(`/api/runs/${created.run.id}/ready`, { method: "POST" });
-      if (!readyResponse.ok) throw new Error(await responseMessage(readyResponse, "Could not start the match."));
-      router.push(`/play/wordle/${created.run.id}`);
+      if (response.status === 409) {
+        const body = await response.json() as { gameId?: string };
+        if (body.gameId) {
+          setActiveGameId(body.gameId);
+          setError("You already have a game in progress. Resume or quit it first.");
+          setSubmitting(false);
+          return;
+        }
+      }
+      if (!response.ok) throw new Error(await responseMessage(response, "Could not start the game."));
+
+      const created = await response.json() as { gameId: string };
+      router.push(`/play/wordle/${created.gameId}`);
     } catch (launchError) {
-      setError(launchError instanceof Error ? launchError.message : "Could not start the match.");
+      setError(launchError instanceof Error ? launchError.message : "Could not start the game.");
       setSubmitting(false);
     }
   }
@@ -138,6 +164,18 @@ export function WordleLaunchDialog({
             Everyone gets the same word and one board. Model guesses stay sealed until your board ends.
           </DialogDescription>
         </DialogHeader>
+
+        {activeGameId && (
+          <Alert>
+            <AlertTitle>You have a game in progress</AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
+              <span>Finish or quit it before starting another.</span>
+              <Button onClick={() => router.push(`/play/wordle/${activeGameId}`)} size="sm">
+                Resume game
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <form className="flex flex-col gap-5" onSubmit={launch}>
           <FieldGroup>
@@ -223,6 +261,8 @@ async function responseMessage(response: Response, fallback: string): Promise<st
   try {
     const body = await response.json() as { error?: string; message?: string };
     if (body.error === "internal_error") return "The game service is not configured yet.";
+    if (body.error === "at_capacity") return body.message ?? "The arena is busy. Try again in a moment.";
+    if (body.error === "unknown_model") return "One of those models is not currently enabled.";
     return body.message ?? fallback;
   } catch {
     return fallback;

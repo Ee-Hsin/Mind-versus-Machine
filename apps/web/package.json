@@ -9,8 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@ai-ramp/game-codenames": "*",
-    "@ai-ramp/game-imposter": "*",
+    "@ai-ramp/engine": "*",
     "@ai-ramp/game-wordle": "*",
     "@ai-ramp/model-runtime": "*",
     "@ai-ramp/protocol": "*",
