@@ -1,26 +1,8 @@
--- Replaces the run/event schema with a game/turn schema.
+-- Mind versus Machine — complete schema. Run once on a fresh project.
 --
--- The old design used Postgres as an IPC bus between the web app and a worker:
--- arena_human_turns bridged an HTTP action to a polling worker, and arena_events
--- doubled as both the live transport and the replay log. Live play is now driven
--- in-memory over SSE, so these tables serve only durable purposes: resuming an
--- interrupted game, replaying a finished one, and scoring the leaderboard.
-
--- --- Out with the IPC bus ----------------------------------------------------
-
-drop function if exists submit_arena_human_action(uuid, uuid, text, jsonb, text);
-drop function if exists claim_next_arena_run(text);
-drop view if exists completed_arena_runs;
-
-drop table if exists arena_human_turns;
-drop table if exists arena_game_replays;
-drop table if exists arena_events;
-drop table if exists arena_participants;
-drop table if exists arena_runs;
-
--- arena_ratings is left in place but is no longer read. Wordle is a shared-word
--- race rather than a head-to-head, so Elo does not apply; it may return when
--- Codenames is ported.
+-- Live play is driven in-memory over SSE, so Postgres is never in the latency
+-- path. These tables serve only durable purposes: resuming an interrupted game,
+-- replaying a finished one, and scoring the leaderboard.
 
 -- --- Identity ----------------------------------------------------------------
 
@@ -129,7 +111,7 @@ create index wordle_turns_replay_idx on wordle_turns (game_id, created_at);
 -- scoring code already consumes. Forfeited and abandoned participants are
 -- filtered out here, so exclusion is enforced in one place rather than at every
 -- call site — and note the filter is on the PARTICIPANT, not the game, so the
--- model boards from a forfeited game still count.
+-- model boards from a game a human quit still count.
 create view wordle_participant_results
 with (security_invoker = true) as
 select
