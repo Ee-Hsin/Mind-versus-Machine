@@ -12,6 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
+import { WordleLaunchDialog } from "@/components/wordle/wordle-launch-dialog";
 import { useWordleGame } from "@/lib/wordle/use-wordle-game";
 import {
   WORDLE_MAX_TRIES,
@@ -100,6 +101,7 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
   }
 
   const canQuit = snapshot.status === "in_progress" && !you.isGameOver;
+  const canRestart = you.isGameOver || snapshot.status === "forfeited";
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-7 py-7 sm:py-10">
@@ -127,6 +129,7 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
               {replayTurn === null ? "Replay boards" : "Back to results"}
             </Button>
           )}
+          {canRestart && <WordleLaunchDialog buttonLabel="Restart" compact />}
         </div>
       </header>
 

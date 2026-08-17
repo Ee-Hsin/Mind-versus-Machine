@@ -1,5 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
+import { HeaderActions } from "@/components/header-actions";
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
   return (
@@ -18,10 +19,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </span>
           </Link>
 
-          <span className="flex items-center gap-2 font-mono text-[0.62rem] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
-            <span aria-hidden="true" className="size-1.5 rotate-45 bg-wordle-correct" />
-            Wordle arena
-          </span>
+          <HeaderActions />
         </div>
       </header>
 

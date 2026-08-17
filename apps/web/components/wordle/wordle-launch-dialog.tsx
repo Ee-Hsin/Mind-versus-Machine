@@ -28,18 +28,27 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
+import { cn } from "@/lib/utils";
 import type { ModelRef } from "@/lib/wordle/types";
 
 interface CatalogResponse {
   models: ModelRef[];
 }
 
-export function WordleLaunchDialog() {
+export function WordleLaunchDialog({
+  buttonLabel = "Enter the Wordle arena",
+  buttonClassName,
+  compact = false,
+}: Readonly<{
+  buttonLabel?: string;
+  buttonClassName?: string;
+  compact?: boolean;
+}>) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ModelRef[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [displayName, setDisplayName] = useState("Player");
+  const [displayName, setDisplayName] = useState("");
   const [catalogState, setCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,7 +88,7 @@ export function WordleLaunchDialog() {
     event.preventDefault();
     const name = displayName.trim();
     if (!name || selectedIds.length === 0) {
-      setError(!name ? "Enter a name for your board." : "Choose at least one model.");
+      setError(!name ? "Enter your name." : "Choose at least one model.");
       return;
     }
 
@@ -110,27 +119,32 @@ export function WordleLaunchDialog() {
       <DialogTrigger
         render={
           <Button
-            aria-label="Play Wordle"
-            className="h-14 w-full rounded-full bg-wordle-correct px-6 text-base font-bold text-wordle-correct-foreground shadow-lg shadow-wordle-correct/15 hover:bg-wordle-correct/90 sm:w-auto"
+            aria-label={buttonLabel}
+            className={cn(
+              !compact && "h-14 w-full rounded-full bg-wordle-correct px-6 text-base font-bold text-wordle-correct-foreground shadow-lg shadow-wordle-correct/15 hover:bg-wordle-correct/90 sm:w-auto",
+              buttonClassName,
+            )}
+            size={compact ? "sm" : "default"}
+            variant={compact ? "outline" : "default"}
           />
         }
       >
-        Enter the Wordle arena
-        <ArrowRightIcon aria-hidden="true" className="ml-2 size-4 transition-transform group-hover/button:translate-x-1" />
+        {buttonLabel}
+        {compact ? <PlayIcon aria-hidden="true" /> : <ArrowRightIcon aria-hidden="true" className="ml-2 size-4 transition-transform group-hover/button:translate-x-1" />}
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Build your Wordle match</DialogTitle>
           <DialogDescription>
-            Everyone gets the same word and one board. Model guesses stay sealed until your board ends.
+            Everyone gets the same word and their own board.
           </DialogDescription>
         </DialogHeader>
 
         <form className="flex flex-col gap-5" onSubmit={launch}>
           <FieldGroup>
             <Field data-invalid={Boolean(error && !displayName.trim())}>
-              <FieldLabel htmlFor="wordle-player-name">Your board name</FieldLabel>
+              <FieldLabel htmlFor="wordle-player-name">Your name</FieldLabel>
               <Input
                 aria-invalid={Boolean(error && !displayName.trim())}
                 autoComplete="nickname"
@@ -140,13 +154,15 @@ export function WordleLaunchDialog() {
                   setDisplayName(event.target.value);
                   setError(null);
                 }}
+                placeholder="e.g Jordan, Alex, Sarah etc.."
+                required
                 value={displayName}
               />
             </Field>
 
             <FieldSet>
               <FieldLegend variant="label">Models</FieldLegend>
-              <FieldDescription>Pick up to five. This always starts a single shared-word match.</FieldDescription>
+              <FieldDescription>Choose up to five.</FieldDescription>
               <FieldGroup data-slot="checkbox-group" className="max-h-56 overflow-y-auto rounded-lg border p-2">
                 {catalogState === "loading" && (
                   <div className="flex min-h-24 items-center justify-center gap-2 text-muted-foreground">
