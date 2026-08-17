@@ -13,7 +13,8 @@
  */
 import { WordleModel } from "../packages/games/wordle/src/model.ts";
 import { Wordle, validGuesses } from "../packages/games/wordle/src/wordle.ts";
-import { toSeatView, type SeatBoard } from "../apps/web/lib/arena/views.ts";
+import { createGame, getGame, submitGuess } from "../apps/web/lib/wordle/game-store.ts";
+import { toSeatView } from "../apps/web/lib/wordle/views.ts";
 
 let failures = 0;
 
@@ -33,17 +34,14 @@ const model = new WordleModel({ answer: "CRANE", guesses: [] });
 model.guessWord("SLATE");
 model.guessWord("CRANE");
 
-const board: SeatBoard = {
+const board = {
   seatId: "anthropic:claude-haiku-4-5",
-  actorKind: "model",
-  modelId: "anthropic:claude-haiku-4-5",
   displayName: "Haiku",
-  rows: model.publicState().board,
-  isWon: true,
-  isGameOver: true,
+  model,
+  status: "finished" as const,
 };
 
-const live = toSeatView(board, false);
+const live = toSeatView({ ...board, concealed: true });
 const serialisedLive = JSON.stringify(live);
 check("guesses are blanked", live.board.every((row) => row.guess === ""));
 // SLATE vs CRANE: A and E are both already in position.
@@ -53,12 +51,12 @@ check("no guessed word leaks either", !serialisedLive.includes("SLATE"));
 check("progress is still visible", live.guessesMade === 2 && live.isWon);
 check("marked concealed", live.concealed);
 
-const revealed = toSeatView(board, true);
+const revealed = toSeatView({ ...board, concealed: false });
 check("unsealed after reveal", revealed.board.map((row) => row.guess).join(",") === "SLATE,CRANE");
 check("not marked concealed once revealed", !revealed.concealed);
 
 console.log("\nthe human's own board is never concealed");
-const humanView = toSeatView({ ...board, seatId: "human", actorKind: "human", modelId: undefined }, false);
+const humanView = toSeatView({ ...board, seatId: "human", concealed: false });
 check("human letters always visible", humanView.board[0].guess === "SLATE");
 check("human never flagged concealed", !humanView.concealed);
 
@@ -97,6 +95,19 @@ check(
   dup.board[0].states.join(",") === "Yellow,Yellow,Green,Green,Gray",
   dup.board[0].states,
 );
+
+// --- Independent in-memory games -------------------------------------------
+console.log("\nmultiple games stay independent");
+const firstGame = createGame("First player", []);
+const secondGame = createGame("Second player", []);
+check("games receive different ids", firstGame.gameId !== secondGame.gameId);
+
+const firstResult = submitGuess(firstGame.gameId, "SLATE", 1);
+check("the first game accepts its guess", firstResult?.accepted === true);
+check("the second game is unchanged", getGame(secondGame.gameId)?.you.guessesMade === 0);
+
+const thirdGame = createGame("First player again", []);
+check("an unfinished game does not block a new game", thirdGame.gameId !== firstGame.gameId);
 
 console.log(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} check(s) failed.\n`);
 process.exit(failures === 0 ? 0 : 1);

@@ -1,7 +1,6 @@
 "use client";
 
-import type { ModelRef } from "@ai-ramp/protocol";
-import { Grid3X3Icon, PlayIcon, type LucideIcon } from "lucide-react";
+import { ArrowRightIcon, PlayIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -29,16 +28,13 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
-import type { GameViewRegistration } from "@/games/registry";
+import type { ModelRef } from "@/lib/wordle/types";
 
 interface CatalogResponse {
   models: ModelRef[];
 }
 
-export function WordleLaunchDialog({
-  game,
-  icon: Icon = Grid3X3Icon,
-}: Readonly<{ game: GameViewRegistration; icon?: LucideIcon }>) {
+export function WordleLaunchDialog() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ModelRef[]>([]);
@@ -47,25 +43,6 @@ export function WordleLaunchDialog({
   const [catalogState, setCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeGameId, setActiveGameId] = useState<string | null>(null);
-
-  // You can only have one Wordle game at a time, so surface an unfinished one up
-  // front as something to resume rather than letting the create fail with a 409.
-  useEffect(() => {
-    if (!open) return;
-    let active = true;
-    fetch("/api/games/active", { cache: "no-store" })
-      .then((response) => (response.ok ? response.json() : { game: null }))
-      .then((body: { game: { gameId: string } | null }) => {
-        if (active) setActiveGameId(body.game?.gameId ?? null);
-      })
-      .catch(() => {
-        if (active) setActiveGameId(null);
-      });
-    return () => {
-      active = false;
-    };
-  }, [open]);
 
   useEffect(() => {
     if (!open) return;
@@ -118,15 +95,6 @@ export function WordleLaunchDialog({
         body: JSON.stringify({ modelIds: selectedIds, displayName: name }),
       });
 
-      if (response.status === 409) {
-        const body = await response.json() as { gameId?: string };
-        if (body.gameId) {
-          setActiveGameId(body.gameId);
-          setError("You already have a game in progress. Resume or quit it first.");
-          setSubmitting(false);
-          return;
-        }
-      }
       if (!response.ok) throw new Error(await responseMessage(response, "Could not start the game."));
 
       const created = await response.json() as { gameId: string };
@@ -143,39 +111,21 @@ export function WordleLaunchDialog({
         render={
           <Button
             aria-label="Play Wordle"
-            className="h-44 w-full whitespace-normal px-5 py-5 text-left"
-            variant="outline"
+            className="h-14 w-full rounded-full bg-wordle-correct px-6 text-base font-bold text-wordle-correct-foreground shadow-lg shadow-wordle-correct/15 hover:bg-wordle-correct/90 sm:w-auto"
           />
         }
       >
-        <span className="flex h-full w-full flex-col items-start gap-6">
-          <Icon aria-hidden="true" data-icon="inline-start" />
-          <span className="flex flex-col items-start gap-2">
-            <span className="font-heading text-base leading-none font-medium">{game.label}</span>
-            <span className="max-w-72 text-left text-sm leading-5 text-muted-foreground">{game.summary}</span>
-          </span>
-        </span>
+        Enter the Wordle arena
+        <ArrowRightIcon aria-hidden="true" className="ml-2 size-4 transition-transform group-hover/button:translate-x-1" />
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>Choose your Wordle opponents</DialogTitle>
+          <DialogTitle>Build your Wordle match</DialogTitle>
           <DialogDescription>
             Everyone gets the same word and one board. Model guesses stay sealed until your board ends.
           </DialogDescription>
         </DialogHeader>
-
-        {activeGameId && (
-          <Alert>
-            <AlertTitle>You have a game in progress</AlertTitle>
-            <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-              <span>Finish or quit it before starting another.</span>
-              <Button onClick={() => router.push(`/play/wordle/${activeGameId}`)} size="sm">
-                Resume game
-              </Button>
-            </AlertDescription>
-          </Alert>
-        )}
 
         <form className="flex flex-col gap-5" onSubmit={launch}>
           <FieldGroup>
@@ -218,7 +168,7 @@ export function WordleLaunchDialog({
                       <FieldLabel htmlFor={`wordle-model-${model.id}`}>
                         <FieldContent>
                           <FieldTitle>{model.displayName}</FieldTitle>
-                          <FieldDescription>{model.id.split(":")[0]}</FieldDescription>
+                          <FieldDescription>{model.id.split("/")[0]}</FieldDescription>
                         </FieldContent>
                       </FieldLabel>
                     </Field>
@@ -237,7 +187,9 @@ export function WordleLaunchDialog({
           {catalogState === "ready" && models.length === 0 && (
             <Alert>
               <AlertTitle>No models configured</AlertTitle>
-              <AlertDescription>Add model IDs to ARENA_MODELS before starting a match.</AlertDescription>
+              <AlertDescription>
+                Add OPENROUTER_API_KEY and matching model IDs in ARENA_MODELS before starting a match.
+              </AlertDescription>
             </Alert>
           )}
           {error && <FieldError>{error}</FieldError>}
@@ -248,7 +200,7 @@ export function WordleLaunchDialog({
               type="submit"
             >
               {submitting ? <Spinner data-icon="inline-start" /> : <PlayIcon data-icon="inline-start" />}
-              {submitting ? "Starting" : "Play one game"}
+              {submitting ? "Starting" : "Start match"}
             </Button>
           </DialogFooter>
         </form>
@@ -260,8 +212,6 @@ export function WordleLaunchDialog({
 async function responseMessage(response: Response, fallback: string): Promise<string> {
   try {
     const body = await response.json() as { error?: string; message?: string };
-    if (body.error === "internal_error") return "The game service is not configured yet.";
-    if (body.error === "at_capacity") return body.message ?? "The arena is busy. Try again in a moment.";
     if (body.error === "unknown_model") return "One of those models is not currently enabled.";
     return body.message ?? fallback;
   } catch {

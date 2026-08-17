@@ -1,26 +1,26 @@
 "use client";
 
 import {
-  WORDLE_MAX_TRIES,
-  WORDLE_WORD_LENGTH,
-  type GameStatus,
-  type WordleGuessRow,
-  type WordleLetterState,
-  type WordleSeatView,
-} from "@ai-ramp/protocol";
-import {
   DeleteIcon,
   EyeIcon,
   EyeOffIcon,
   FlagIcon,
   RotateCcwIcon,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { useWordleGame } from "@/lib/wordle/use-wordle-game";
+import {
+  WORDLE_MAX_TRIES,
+  WORDLE_WORD_LENGTH,
+  type GameStatus,
+  type WordleGuessRow,
+  type WordleLetterState,
+  type WordleSeatView,
+} from "@/lib/wordle/types";
 import { cn } from "@/lib/utils";
 
 const KEY_ROWS = ["QWERTYUIOP", "ASDFGHJKL", "ZXCVBNM"];
@@ -155,13 +155,6 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
         </Alert>
       )}
 
-      {snapshot.status === "failed" && (
-        <Alert variant="destructive">
-          <AlertTitle>The game stopped</AlertTitle>
-          <AlertDescription>This round could not be finished. Return to Games to start another.</AlertDescription>
-        </Alert>
-      )}
-
       {revealed && snapshot.answer && (
         <section className="flex flex-wrap items-center justify-between gap-3 border-y py-4">
           <div className="flex flex-col gap-1">
@@ -222,7 +215,7 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
             <div>
               <h2 className="font-heading text-lg font-medium" id="model-boards-title">Model boards</h2>
               <p className="text-sm leading-6 text-muted-foreground">
-                {revealed ? "Every guess is visible." : "Tile feedback is live. Letters stay sealed while you play."}
+                {revealed ? "Every finished guess is visible." : "Model progress refreshes while their letters stay sealed."}
               </p>
             </div>
             {revealed
@@ -236,7 +229,7 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
                 <div className="flex min-w-0 items-center justify-between gap-2">
                   <div className="min-w-0">
                     <h3 className="truncate text-sm font-medium">{seat.displayName}</h3>
-                    <p className="truncate text-xs text-muted-foreground">{seat.seatId.split(":")[0]}</p>
+                    <p className="truncate text-xs text-muted-foreground">{seat.seatId.split("/")[0]}</p>
                   </div>
                   <span className="shrink-0 text-xs font-medium text-muted-foreground">
                     {modelBoardLabel(seat, revealed)}
@@ -275,6 +268,16 @@ function WordleBoard({
   size: "large" | "compact";
   visibleTurns: number;
 }>) {
+  const previousRowCount = useRef(rows.length);
+  const [revealingRowIndex, setRevealingRowIndex] = useState<number | null>(null);
+
+  useLayoutEffect(() => {
+    setRevealingRowIndex(
+      rows.length > previousRowCount.current ? rows.length - 1 : null,
+    );
+    previousRowCount.current = rows.length;
+  }, [rows.length]);
+
   return (
     <div
       aria-label="Wordle board"
@@ -289,6 +292,9 @@ function WordleBoard({
             {Array.from({ length: WORDLE_WORD_LENGTH }, (_, columnIndex) => {
               const letter = row ? row.guess[columnIndex] ?? "" : draft[columnIndex] ?? "";
               const letterState = row?.states[columnIndex];
+              const shouldReveal = Boolean(
+                letterState && size === "large" && rowIndex === revealingRowIndex,
+              );
               return (
                 <div
                   aria-label={tileLabel(letter, letterState, concealed)}
@@ -296,10 +302,12 @@ function WordleBoard({
                     "grid place-items-center border-2 font-bold uppercase",
                     size === "large" ? "size-13 text-2xl sm:size-15 sm:text-3xl" : "size-8 text-sm sm:size-9 sm:text-base",
                     tileClasses(letterState, Boolean(letter)),
-                    letterState && "wordle-tile-reveal",
+                    shouldReveal && "wordle-tile-reveal",
                   )}
+                  data-state={letterState}
                   key={`${rowIndex}-${columnIndex}-${letterState ?? "empty"}`}
                   role="gridcell"
+                  style={shouldReveal ? { animationDelay: `${columnIndex * 250}ms` } : undefined}
                 >
                   {letter}
                 </div>
@@ -333,7 +341,7 @@ function WordleKeyboard({
         <div className="flex w-full justify-center gap-1.5" key={row}>
           {rowIndex === 2 && (
             <button
-              className="h-12 min-w-14 flex-[1.5] rounded-sm bg-secondary px-2 text-xs font-semibold transition-colors hover:bg-muted disabled:opacity-50"
+              className="h-12 min-w-14 flex-[1.5] rounded-sm bg-wordle-key-unused px-2 text-xs font-semibold text-wordle-key-unused-foreground transition-opacity hover:opacity-80 disabled:cursor-default"
               disabled={disabled || !guessComplete}
               onClick={onEnter}
               type="button"
@@ -345,7 +353,7 @@ function WordleKeyboard({
             <button
               aria-label={letter}
               className={cn(
-                "h-12 min-w-7 flex-1 rounded-sm text-sm font-semibold transition-colors disabled:opacity-50",
+                "h-12 min-w-7 flex-1 rounded-sm text-sm font-semibold transition-opacity disabled:cursor-default",
                 keyboardClasses(states[letter]),
               )}
               disabled={disabled}
@@ -359,7 +367,7 @@ function WordleKeyboard({
           {rowIndex === 2 && (
             <button
               aria-label="Delete letter"
-              className="grid h-12 min-w-12 flex-[1.25] place-items-center rounded-sm bg-secondary transition-colors hover:bg-muted disabled:opacity-50"
+              className="grid h-12 min-w-12 flex-[1.25] place-items-center rounded-sm bg-wordle-key-unused text-wordle-key-unused-foreground transition-opacity hover:opacity-80 disabled:cursor-default"
               disabled={disabled}
               onClick={onDelete}
               type="button"
@@ -374,17 +382,15 @@ function WordleKeyboard({
 }
 
 function StatusBadge({ status }: Readonly<{ status: GameStatus }>) {
-  const variants: Record<GameStatus, "default" | "secondary" | "destructive" | "outline"> = {
+  const variants: Record<GameStatus, "default" | "secondary" | "outline"> = {
     in_progress: "outline",
     completed: "default",
     forfeited: "secondary",
-    failed: "destructive",
   };
   const labels: Record<GameStatus, string> = {
     in_progress: "Live",
     completed: "Complete",
     forfeited: "Forfeited",
-    failed: "Stopped",
   };
   return <Badge variant={variants[status]}>{labels[status]}</Badge>;
 }
@@ -410,10 +416,10 @@ function tileClasses(state: WordleLetterState | undefined, hasLetter: boolean): 
 }
 
 function keyboardClasses(state: WordleLetterState | undefined): string {
-  if (state === "green") return "bg-wordle-correct text-wordle-correct-foreground hover:bg-wordle-correct/90";
-  if (state === "yellow") return "bg-wordle-present text-wordle-present-foreground hover:bg-wordle-present/90";
-  if (state === "gray") return "bg-wordle-absent text-wordle-absent-foreground hover:bg-wordle-absent/90";
-  return "bg-secondary text-secondary-foreground hover:bg-muted";
+  if (state === "green") return "bg-wordle-key-correct text-wordle-key-evaluated-foreground hover:opacity-80";
+  if (state === "yellow") return "bg-wordle-key-present text-wordle-key-evaluated-foreground hover:opacity-80";
+  if (state === "gray") return "bg-wordle-key-absent text-wordle-key-evaluated-foreground hover:opacity-80";
+  return "bg-wordle-key-unused text-wordle-key-unused-foreground hover:opacity-80";
 }
 
 function tileLabel(letter: string, state: WordleLetterState | undefined, concealed: boolean): string {
@@ -428,9 +434,10 @@ function humanBoardLabel(seat: WordleSeatView): string {
 }
 
 function modelBoardLabel(seat: WordleSeatView, revealed: boolean): string {
+  if (seat.status === "failed") return "Unavailable";
   if (!revealed) {
     if (seat.isGameOver) return "Finished";
-    return seat.guessesMade > 0 ? `Guess ${seat.guessesMade}` : "Thinking";
+    return "Thinking...";
   }
   if (seat.isWon) return `Solved in ${seat.guessesMade}`;
   if (seat.isGameOver) return "Not solved";
@@ -444,9 +451,8 @@ function matchStatus(
   submitting: boolean,
 ): string {
   if (status === "forfeited") return "You quit this round. The word is revealed below.";
-  if (status === "failed") return "This round ended before all boards could finish.";
   if (submitting) return "Your guess is being scored.";
-  if (revealed) return "Your board is complete. Compare every guess, result, and route to the answer.";
+  if (revealed) return "Your board is complete. Model results appear as they finish.";
   if (you.isGameOver) return "Your board is complete. Unsealing the model games now.";
   return `Your turn: guess ${you.guessesMade + 1} of ${WORDLE_MAX_TRIES}.`;
 }

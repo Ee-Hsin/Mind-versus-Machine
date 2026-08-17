@@ -5,8 +5,8 @@ import { AppShell } from "@/components/app-shell";
 import "./styles.css";
 
 export const metadata: Metadata = {
-  title: "The Intangible Game",
-  description: "Humans and AI models playing social and word games.",
+  title: "Mind vs. Machine — Wordle against AI",
+  description: "Play the same Wordle as leading AI models, then compare every board.",
 };
 
 const geist = Geist({ subsets: ["latin"], variable: "--font-geist-sans" });

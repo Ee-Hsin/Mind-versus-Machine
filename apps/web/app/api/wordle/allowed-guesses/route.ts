@@ -6,7 +6,7 @@ let cached: string | undefined;
 
 /**
  * The word list the client validates against, so typing a non-word is rejected
- * in zero milliseconds with no request at all.
+ * immediately without a scoring request.
  *
  * This is the half of Wordle feedback that needs no secret. Colours still come
  * from the server, which is what keeps the answer out of the browser.

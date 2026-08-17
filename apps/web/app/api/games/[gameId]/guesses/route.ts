@@ -1,34 +1,27 @@
-import { submitWordleGuessRequestSchema } from "@ai-ramp/protocol";
-import { requireOwnedGame } from "@/lib/api/game-access";
+import { z } from "zod";
 import { readJson } from "@/lib/api/json";
-import { jsonWithPlayer } from "@/lib/api/player";
-import { apiError, badRequest } from "@/lib/api/repository";
+import { submitGuess } from "@/lib/wordle/game-store";
+import { WORDLE_MAX_TRIES } from "@/lib/wordle/types";
 
 export const runtime = "nodejs";
 
-/**
- * Scores one human guess.
- *
- * The result comes back on this response rather than over the stream: it is a
- * direct request/response, so this is both the lowest-latency path and avoids
- * the client having to correlate its own guess back off a broadcast. Scoring is
- * in-memory, and the durable write is queued behind the response.
- *
- * The server is authoritative even though the client also renders optimistically
- * — the client only knows word-list membership, never the answer.
- */
+const submitGuessSchema = z.object({
+  guess: z.string().trim().regex(/^[A-Za-z]{5}$/),
+  expectedTurn: z.number().int().min(1).max(WORDLE_MAX_TRIES),
+});
+
 export async function POST(request: Request, context: { params: Promise<{ gameId: string }> }) {
   const { gameId } = await context.params;
-  const parsed = submitWordleGuessRequestSchema.safeParse(await readJson(request));
-  if (!parsed.success) return badRequest("invalid_request", parsed.error.flatten());
-
-  try {
-    const access = await requireOwnedGame(request, gameId);
-    if (!access.ok) return access.response;
-
-    const result = await access.game.submitGuess(parsed.data.guess, parsed.data.expectedTurn);
-    return jsonWithPlayer({ result }, access.player.cookie);
-  } catch (error) {
-    return apiError(error);
+  const parsed = submitGuessSchema.safeParse(await readJson(request));
+  if (!parsed.success) {
+    return Response.json(
+      { error: "invalid_request", details: parsed.error.flatten() },
+      { status: 400 },
+    );
   }
+
+  const result = submitGuess(gameId, parsed.data.guess, parsed.data.expectedTurn);
+  return result
+    ? Response.json({ result })
+    : Response.json({ error: "not_found" }, { status: 404 });
 }

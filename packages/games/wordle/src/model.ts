@@ -1,5 +1,16 @@
-import type { WordlePublicState } from "@ai-ramp/protocol";
 import { Wordle } from "./wordle";
+
+export interface WordlePublicState {
+  board: Array<{
+    guess: string;
+    states: Array<"green" | "yellow" | "gray">;
+  }>;
+  guessesMade: number;
+  triesRemaining: number;
+  isWon: boolean;
+  isGameOver: boolean;
+  answer?: string;
+}
 
 export interface WordleState {
   answer: string;

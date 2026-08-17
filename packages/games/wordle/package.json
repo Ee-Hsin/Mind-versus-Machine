@@ -5,9 +5,5 @@
   "type": "module",
   "exports": { ".": "./src/index.ts" },
   "scripts": { "typecheck": "tsc --noEmit" },
-  "dependencies": {
-    "@ai-ramp/engine": "*",
-    "@ai-ramp/protocol": "*"
-  },
   "devDependencies": { "typescript": "^5.9.0" }
 }

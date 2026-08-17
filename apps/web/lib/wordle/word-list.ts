@@ -2,8 +2,9 @@
  * The allowed-guess list, fetched once per page session.
  *
  * This is the half of Wordle feedback that needs no secret, and having it on the
- * client is what makes "not in word list" cost zero milliseconds and zero
- * requests. Colours still come from the server — the answer never ships.
+ * client is what makes "not in word list" feedback immediate and independent of
+ * the scoring request. Colours come from the server while the answer stays on
+ * the server until the human board ends.
  */
 let pending: Promise<Set<string>> | undefined;
 
