@@ -213,9 +213,6 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-heading text-lg font-medium" id="model-boards-title">Model boards</h2>
-              <p className="text-sm leading-6 text-muted-foreground">
-                {revealed ? "Every finished guess is visible." : "Model progress refreshes while their letters stay sealed."}
-              </p>
             </div>
           </div>
 
