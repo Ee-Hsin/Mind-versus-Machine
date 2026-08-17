@@ -98,15 +98,15 @@ check(
 
 // --- Independent in-memory games -------------------------------------------
 console.log("\nmultiple games stay independent");
-const firstGame = createGame("First player", []);
-const secondGame = createGame("Second player", []);
+const firstGame = createGame([]);
+const secondGame = createGame([]);
 check("games receive different ids", firstGame.gameId !== secondGame.gameId);
 
 const firstResult = submitGuess(firstGame.gameId, "SLATE", 1);
 check("the first game accepts its guess", firstResult?.accepted === true);
 check("the second game is unchanged", getGame(secondGame.gameId)?.you.guessesMade === 0);
 
-const thirdGame = createGame("First player again", []);
+const thirdGame = createGame([]);
 check("an unfinished game does not block a new game", thirdGame.gameId !== firstGame.gameId);
 
 console.log(failures === 0 ? "\nAll checks passed.\n" : `\n${failures} check(s) failed.\n`);

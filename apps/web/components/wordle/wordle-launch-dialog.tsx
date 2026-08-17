@@ -22,11 +22,9 @@ import {
   FieldError,
   FieldGroup,
   FieldLabel,
-  FieldLegend,
   FieldSet,
   FieldTitle,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 import type { ModelRef } from "@/lib/wordle/types";
@@ -48,7 +46,6 @@ export function WordleLaunchDialog({
   const [open, setOpen] = useState(false);
   const [models, setModels] = useState<ModelRef[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [displayName, setDisplayName] = useState("");
   const [catalogState, setCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,9 +83,8 @@ export function WordleLaunchDialog({
 
   async function launch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const name = displayName.trim();
-    if (!name || selectedIds.length === 0) {
-      setError(!name ? "Enter your name." : "Choose at least one model.");
+    if (selectedIds.length === 0) {
+      setError("Choose at least one model.");
       return;
     }
 
@@ -101,7 +97,7 @@ export function WordleLaunchDialog({
       const response = await fetch("/api/games", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ modelIds: selectedIds, displayName: name }),
+        body: JSON.stringify({ modelIds: selectedIds }),
       });
 
       if (!response.ok) throw new Error(await responseMessage(response, "Could not start the game."));
@@ -137,32 +133,13 @@ export function WordleLaunchDialog({
         <DialogHeader>
           <DialogTitle>Build your Wordle match</DialogTitle>
           <DialogDescription>
-            Everyone gets the same word and their own board.
+            Choose up to five models to face.
           </DialogDescription>
         </DialogHeader>
 
-        <form className="flex flex-col gap-5" onSubmit={launch}>
+        <form className="-mt-2 flex flex-col gap-5" onSubmit={launch}>
           <FieldGroup>
-            <Field data-invalid={Boolean(error && !displayName.trim())}>
-              <FieldLabel htmlFor="wordle-player-name">Your name</FieldLabel>
-              <Input
-                aria-invalid={Boolean(error && !displayName.trim())}
-                autoComplete="nickname"
-                id="wordle-player-name"
-                maxLength={40}
-                onChange={(event) => {
-                  setDisplayName(event.target.value);
-                  setError(null);
-                }}
-                placeholder="e.g Jordan, Alex, Sarah etc.."
-                required
-                value={displayName}
-              />
-            </Field>
-
             <FieldSet>
-              <FieldLegend variant="label">Models</FieldLegend>
-              <FieldDescription>Choose up to five.</FieldDescription>
               <FieldGroup data-slot="checkbox-group" className="max-h-56 overflow-y-auto rounded-lg border p-2">
                 {catalogState === "loading" && (
                   <div className="flex min-h-24 items-center justify-center gap-2 text-muted-foreground">

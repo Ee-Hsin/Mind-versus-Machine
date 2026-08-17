@@ -7,7 +7,6 @@ export const runtime = "nodejs";
 
 const createGameSchema = z.object({
   modelIds: z.array(z.string().min(1)).min(1).max(WORDLE_MODEL_LIMIT),
-  displayName: z.string().trim().min(1).max(40),
 });
 
 export async function POST(request: Request) {
@@ -28,9 +27,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "unknown_model" }, { status: 400 });
   }
 
-  const snapshot = createGame(
-    parsed.data.displayName,
-    modelIds.map((id) => configured.get(id)!),
-  );
+  const snapshot = createGame(modelIds.map((id) => configured.get(id)!));
   return Response.json({ gameId: snapshot.gameId, snapshot }, { status: 201 });
 }

@@ -43,14 +43,14 @@ function store(): GameStore {
   return globalForGames.__wordleGameStore;
 }
 
-export function createGame(displayName: string, models: ModelRef[]): WordleSnapshot {
+export function createGame(models: ModelRef[]): WordleSnapshot {
   removeExpiredGames();
   const answer = new WordleModel().serialize().answer;
   const now = Date.now();
   const game: LiveGame = {
     id: randomUUID(),
     answer,
-    displayName,
+    displayName: "You",
     expiresAt: now + GAME_LIFETIME_MS,
     status: "in_progress",
     human: new WordleModel({ answer, guesses: [] }),

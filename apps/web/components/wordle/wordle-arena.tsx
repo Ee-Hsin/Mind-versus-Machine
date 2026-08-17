@@ -2,8 +2,6 @@
 
 import {
   DeleteIcon,
-  EyeIcon,
-  EyeOffIcon,
   FlagIcon,
   RotateCcwIcon,
 } from "lucide-react";
@@ -11,6 +9,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Spinner } from "@/components/ui/spinner";
 import { WordleLaunchDialog } from "@/components/wordle/wordle-launch-dialog";
 import { useWordleGame } from "@/lib/wordle/use-wordle-game";
@@ -44,11 +43,22 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
     !pendingGuess &&
     replayTurn === null,
   );
+  const showKeyboard = Boolean(
+    snapshot &&
+    you &&
+    snapshot.status === "in_progress" &&
+    !you.isGameOver &&
+    replayTurn === null,
+  );
   const shownTurns = replayTurn ?? WORDLE_MAX_TRIES;
 
   // Step the replay one row at a time.
   useEffect(() => {
-    if (replayTurn === null || replayTurn >= WORDLE_MAX_TRIES) return;
+    if (replayTurn === null) return;
+    if (replayTurn >= WORDLE_MAX_TRIES) {
+      setReplayTurn(null);
+      return;
+    }
     const timeout = setTimeout(() => setReplayTurn((turn) => (turn === null ? null : turn + 1)), 650);
     return () => clearTimeout(timeout);
   }, [replayTurn]);
@@ -102,88 +112,70 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
 
   const canQuit = snapshot.status === "in_progress" && !you.isGameOver;
   const canRestart = you.isGameOver || snapshot.status === "forfeited";
+  const hasSingleModel = snapshot.models.length === 1;
+  const result = resultBanner(snapshot.status, you);
 
   return (
-    <div className="mx-auto flex w-full max-w-6xl flex-col gap-7 py-7 sm:py-10">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="flex flex-col gap-3">
-          <div className="flex flex-wrap items-center gap-3">
-            <h1 className="font-heading text-3xl font-semibold sm:text-4xl">Wordle</h1>
-            <StatusBadge status={snapshot.status} />
-          </div>
-          <p className="max-w-xl text-sm leading-6 text-muted-foreground">
-            {matchStatus(snapshot.status, you, revealed, Boolean(pendingGuess))}
-          </p>
-        </div>
+    <div className="mx-auto flex w-full max-w-6xl flex-col py-7 sm:py-10 lg:box-border lg:h-[calc(100svh-4.5rem)] lg:overflow-hidden lg:py-5">
 
-        <div className="flex items-center gap-2">
-          {canQuit && (
-            <Button onClick={() => setConfirmingQuit(true)} size="sm" variant="ghost">
-              <FlagIcon data-icon="inline-start" />
-              Quit
+      <Dialog open={confirmingQuit} onOpenChange={setConfirmingQuit}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader className="items-center text-center">
+            <DialogTitle>Quit this game?</DialogTitle>
+            <DialogDescription>Your board will be forfeited.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="justify-center sm:justify-center">
+            <Button onClick={() => setConfirmingQuit(false)} variant="ghost">Keep playing</Button>
+            <Button
+              onClick={() => {
+                setConfirmingQuit(false);
+                void forfeit();
+              }}
+              variant="destructive"
+            >
+              Quit game
             </Button>
-          )}
-          {revealed && (
-            <Button onClick={() => setReplayTurn((turn) => (turn === null ? 0 : null))} variant="outline">
-              <RotateCcwIcon data-icon="inline-start" />
-              {replayTurn === null ? "Replay boards" : "Back to results"}
-            </Button>
-          )}
-          {canRestart && <WordleLaunchDialog buttonLabel="Restart" compact />}
-        </div>
-      </header>
-
-      {confirmingQuit && canQuit && (
-        <Alert>
-          <AlertTitle>Quit this game?</AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-3">
-            <span>
-              Your board will be forfeited and left out of the human stats. The models finish their
-              boards either way, and you can start a new game straight after.
-            </span>
-            <span className="flex gap-2">
-              <Button onClick={() => setConfirmingQuit(false)} size="sm" variant="ghost">Keep playing</Button>
-              <Button
-                onClick={() => {
-                  setConfirmingQuit(false);
-                  void forfeit();
-                }}
-                size="sm"
-                variant="destructive"
-              >
-                Quit game
-              </Button>
-            </span>
-          </AlertDescription>
-        </Alert>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {revealed && snapshot.answer && (
-        <section className="flex flex-wrap items-center justify-between gap-3 border-y py-4">
+        <section className={cn("mb-6 flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-4", result.className)}>
           <div className="flex flex-col gap-1">
             <p className="font-heading text-lg font-medium">
-              {you.isWon ? `Solved in ${you.guessesMade}` : "Round complete"}
+              {result.title}
             </p>
-            <p className="text-sm text-muted-foreground">All opponent boards are now unsealed.</p>
+            <p className="text-sm text-muted-foreground">{result.description}</p>
           </div>
           <p className="font-mono text-xl font-semibold">{snapshot.answer}</p>
         </section>
       )}
 
-      <div className="grid items-start gap-12 lg:grid-cols-[minmax(20rem,0.82fr)_minmax(0,1.18fr)] xl:gap-16">
+      <div className="grid items-start gap-12 lg:min-h-0 lg:flex-1 lg:items-stretch lg:grid-cols-[minmax(20rem,0.82fr)_minmax(0,1.18fr)] xl:gap-16">
         <section aria-labelledby="your-board-title" className="flex flex-col items-center gap-6">
           <div className="flex w-full max-w-sm items-center justify-between gap-4">
             <div>
               <h2 className="font-heading text-lg font-medium" id="your-board-title">
                 {you.displayName}
               </h2>
-              <p className="text-sm text-muted-foreground">
-                {replayTurn === null
-                  ? `${you.triesRemaining} guesses remaining`
-                  : `Replay turn ${replayTurn} of ${WORDLE_MAX_TRIES}`}
-              </p>
+              {replayTurn !== null && <p className="text-sm text-muted-foreground">Replay turn {replayTurn} of {WORDLE_MAX_TRIES}</p>}
             </div>
-            <Badge variant={you.isWon ? "default" : "outline"}>{humanBoardLabel(you)}</Badge>
+            <div className="flex items-center gap-2">
+              <Badge variant={you.isWon ? "default" : "outline"}>{humanBoardLabel(you)}</Badge>
+              {canQuit && (
+                <Button onClick={() => setConfirmingQuit(true)} size="sm" variant="ghost">
+                  <FlagIcon data-icon="inline-start" />
+                  Quit
+                </Button>
+              )}
+              {revealed && (
+                <Button disabled={replayTurn !== null} onClick={() => setReplayTurn(0)} size="sm" variant="outline">
+                  <RotateCcwIcon data-icon="inline-start" />
+                  Replay
+                </Button>
+              )}
+              {canRestart && <WordleLaunchDialog buttonLabel="Restart" compact />}
+            </div>
           </div>
 
           <WordleBoard
@@ -193,27 +185,31 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
             visibleTurns={shownTurns}
           />
 
-          <div className="flex min-h-10 w-full items-center justify-center text-center text-sm">
-            {pendingGuess ? (
-              <span className="flex items-center gap-2 text-muted-foreground"><Spinner />Checking guess</span>
-            ) : actionError ? (
-              <span className="text-destructive">{actionError}</span>
-            ) : canInput ? (
-              <span className="text-muted-foreground">Type or use the keyboard below.</span>
-            ) : null}
-          </div>
+          {showKeyboard && (
+            <>
+              <div className="-my-2 flex min-h-6 w-full items-center justify-center text-center text-sm">
+                {pendingGuess ? (
+                  <span className="flex items-center gap-2 text-muted-foreground"><Spinner />Checking guess</span>
+                ) : actionError ? (
+                  <span className="text-destructive">{actionError}</span>
+                ) : canInput ? (
+                  <span className="text-muted-foreground">Type or use the keyboard below.</span>
+                ) : null}
+              </div>
 
-          <WordleKeyboard
-            disabled={!canInput}
-            guessComplete={draft.length === WORDLE_WORD_LENGTH}
-            onDelete={deleteLetter}
-            onEnter={() => void send()}
-            onLetter={pressLetter}
-            states={keyboard}
-          />
+              <WordleKeyboard
+                disabled={!canInput}
+                guessComplete={draft.length === WORDLE_WORD_LENGTH}
+                onDelete={deleteLetter}
+                onEnter={() => void send()}
+                onLetter={pressLetter}
+                states={keyboard}
+              />
+            </>
+          )}
         </section>
 
-        <section aria-labelledby="model-boards-title" className="flex min-w-0 flex-col gap-5">
+        <section aria-labelledby="model-boards-title" className="flex min-w-0 flex-col gap-5 lg:min-h-0">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h2 className="font-heading text-lg font-medium" id="model-boards-title">Model boards</h2>
@@ -221,12 +217,12 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
                 {revealed ? "Every finished guess is visible." : "Model progress refreshes while their letters stay sealed."}
               </p>
             </div>
-            {revealed
-              ? <EyeIcon aria-hidden="true" className="size-4 text-muted-foreground" />
-              : <EyeOffIcon aria-hidden="true" className="size-4 text-muted-foreground" />}
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={cn(
+            "grid auto-rows-max gap-3 lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:pr-2",
+            hasSingleModel ? "sm:grid-cols-1" : "sm:grid-cols-2",
+          )}>
             {snapshot.models.map((seat) => (
               <article className="flex min-w-0 flex-col gap-5 rounded-md border bg-card/70 p-4" key={seat.seatId}>
                 <div className="flex min-w-0 items-center justify-between gap-2">
@@ -241,7 +237,7 @@ export function WordleArena({ gameId }: Readonly<{ gameId: string }>) {
                 <WordleBoard
                   concealed={seat.concealed}
                   rows={seat.board}
-                  size="compact"
+                  size={hasSingleModel ? "large" : "compact"}
                   visibleTurns={shownTurns}
                 />
               </article>
@@ -384,20 +380,6 @@ function WordleKeyboard({
   );
 }
 
-function StatusBadge({ status }: Readonly<{ status: GameStatus }>) {
-  const variants: Record<GameStatus, "default" | "secondary" | "outline"> = {
-    in_progress: "outline",
-    completed: "default",
-    forfeited: "secondary",
-  };
-  const labels: Record<GameStatus, string> = {
-    in_progress: "Live",
-    completed: "Complete",
-    forfeited: "Forfeited",
-  };
-  return <Badge variant={variants[status]}>{labels[status]}</Badge>;
-}
-
 function keyboardState(rows: WordleGuessRow[]): Record<string, WordleLetterState | undefined> {
   const result: Record<string, WordleLetterState | undefined> = {};
   const rank: Record<WordleLetterState, number> = { gray: 0, yellow: 1, green: 2 };
@@ -447,15 +429,24 @@ function modelBoardLabel(seat: WordleSeatView, revealed: boolean): string {
   return "Unfinished";
 }
 
-function matchStatus(
-  status: GameStatus,
-  you: WordleSeatView,
-  revealed: boolean,
-  submitting: boolean,
-): string {
-  if (status === "forfeited") return "You quit this round. The word is revealed below.";
-  if (submitting) return "Your guess is being scored.";
-  if (revealed) return "Your board is complete. Model results appear as they finish.";
-  if (you.isGameOver) return "Your board is complete. Unsealing the model games now.";
-  return `Your turn: guess ${you.guessesMade + 1} of ${WORDLE_MAX_TRIES}.`;
+function resultBanner(status: GameStatus, you: WordleSeatView) {
+  if (status === "forfeited") {
+    return {
+      className: "border-destructive/60 bg-destructive/15",
+      title: "Game forfeited",
+      description: "Opponent boards are now unsealed.",
+    };
+  }
+  if (you.isWon) {
+    return {
+      className: "border-wordle-correct/60 bg-wordle-correct/15",
+      title: `Solved in ${you.guessesMade}`,
+      description: "Opponent boards are now unsealed.",
+    };
+  }
+  return {
+    className: "border-wordle-present/60 bg-wordle-present/15",
+    title: "Round complete",
+    description: "Opponent boards are now unsealed.",
+  };
 }
