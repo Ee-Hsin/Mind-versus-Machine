@@ -170,6 +170,10 @@
   }
 }
 
+.hero-description {
+  font-family: var(--font-bricolage), sans-serif;
+}
+
 .home-grid::before {
   position: absolute;
   inset: 0;

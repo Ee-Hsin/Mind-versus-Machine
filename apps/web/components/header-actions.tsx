@@ -7,7 +7,7 @@ export function HeaderActions() {
   const pathname = usePathname();
 
   if (pathname === "/") {
-    return <WordleLaunchDialog buttonClassName="h-9 rounded-xl px-3" buttonLabel="New Game" compact />;
+    return <WordleLaunchDialog buttonClassName="hidden h-9 rounded-xl px-3 sm:inline-flex" buttonLabel="New Game" compact />;
   }
 
   return (

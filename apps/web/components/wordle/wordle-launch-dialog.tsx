@@ -36,7 +36,7 @@ interface CatalogResponse {
 }
 
 export function WordleLaunchDialog({
-  buttonLabel = "Enter the Wordle arena",
+  buttonLabel = "Start Game",
   buttonClassName,
   compact = false,
 }: Readonly<{
@@ -121,7 +121,7 @@ export function WordleLaunchDialog({
           <Button
             aria-label={buttonLabel}
             className={cn(
-              !compact && "h-14 w-full rounded-full bg-wordle-correct px-6 text-base font-bold text-wordle-correct-foreground shadow-lg shadow-wordle-correct/15 hover:bg-wordle-correct/90 sm:w-auto",
+              !compact && "relative h-14 w-full rounded-full bg-wordle-correct px-6 text-base font-bold text-wordle-correct-foreground shadow-lg shadow-wordle-correct/15 hover:bg-wordle-correct/90 sm:w-auto sm:pr-12",
               buttonClassName,
             )}
             size={compact ? "sm" : "default"}
@@ -130,7 +130,7 @@ export function WordleLaunchDialog({
         }
       >
         {buttonLabel}
-        {compact ? <PlayIcon aria-hidden="true" /> : <ArrowRightIcon aria-hidden="true" className="ml-2 size-4 transition-transform group-hover/button:translate-x-1" />}
+        {compact ? <PlayIcon aria-hidden="true" /> : <ArrowRightIcon aria-hidden="true" className="absolute top-1/2 right-6 hidden size-4 -translate-y-1/2 transition-transform group-hover/button:translate-x-1 sm:block" />}
       </DialogTrigger>
 
       <DialogContent className="sm:max-w-lg">

@@ -37,22 +37,22 @@ export default function HomePage() {
       <div aria-hidden="true" className="hero-glow" />
 
       <div className="relative grid items-center gap-14 lg:grid-cols-[minmax(0,1fr)_minmax(25rem,0.78fr)] lg:gap-20">
-        <section className="flex max-w-2xl flex-col items-start">
-          <h1 className="max-w-3xl text-[clamp(3.4rem,8vw,6.8rem)] leading-[0.86] font-semibold tracking-[-0.075em] text-balance">
+        <section className="flex max-w-2xl flex-col items-center sm:items-start">
+          <h1 className="max-w-3xl text-center text-[clamp(3.4rem,8vw,6.8rem)] leading-[0.86] font-semibold tracking-[-0.075em] text-balance sm:text-left">
             Outsmart the <span className="text-wordle-correct">machine.</span>
           </h1>
 
-          <p className="mt-8 max-w-xl text-lg leading-8 text-muted-foreground sm:text-xl">
+          <p className="hero-description mt-8 max-w-xl text-center text-lg leading-8 text-muted-foreground sm:text-left sm:text-xl">
             The latest AI models are pretty great at a lot of things... but can they beat you in Wordle?
           </p>
 
-          <div className="mt-5 w-full sm:w-auto">
+          <div className="mx-auto mt-5 w-[calc(100%-3rem)] sm:mx-0 sm:w-auto">
             <WordleLaunchDialog />
           </div>
         </section>
 
         <aside aria-label="Wordle match preview" className="relative mx-auto w-full max-w-[31rem]">
-          <div aria-hidden="true" className="absolute -inset-5 -z-10 rotate-2 rounded-[2rem] border border-wordle-present/25 bg-wordle-present/[0.035]" />
+          <div aria-hidden="true" className="absolute -inset-5 -z-10 rounded-[2rem] border border-wordle-correct/25 bg-wordle-correct/[0.035]" />
           <div className="arena-preview overflow-hidden rounded-[1.75rem] border bg-card shadow-2xl shadow-black/30">
             <div className="border-b px-5 py-4 sm:px-6">
               <p className="font-mono text-[0.62rem] font-semibold tracking-[0.2em] text-muted-foreground uppercase">Your board</p>
